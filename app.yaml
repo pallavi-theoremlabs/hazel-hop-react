@@ -32,22 +32,25 @@ env:
   - name: "COVERBASE_QUESTIONNAIRE_ID"
     value: ""
 
-  # Unity Catalog Volume, reached over FUSE. Validated and write-probed at
-  # startup by ensure_upload_dir(); the app service principal needs READ VOLUME
-  # and WRITE VOLUME plus USE CATALOG / USE SCHEMA.
+  # Unity Catalog Volume, reached through the SDK Files API — Apps do not mount
+  # /Volumes, so this is a path in the Volume namespace, not on the filesystem.
+  # Named and write-probed at startup by probe_storage(); the app service
+  # principal needs READ VOLUME and WRITE VOLUME plus USE CATALOG / USE SCHEMA.
   - name: "UPLOAD_DIR"
     value: "/Volumes/hazel/onboarding/uploads"
 
   - name: "HAZEL_DEV_MODE"
     value: "false"
-    
-  - name: "ENDPOINT_NAME"
-    value: "projects/4fd8b705-0ed7-4537-80df-3ab2b443e565/branches/br-quiet-lake-d8auou47/endpoints/<endpoint-id>"
 
 # Deliberately absent: PGHOST, PGPORT, PGDATABASE, PGUSER, PGSSLMODE and
 # ENDPOINT_NAME. Those are injected by the attached Lakebase project resource and
 # are read from the environment verbatim. Restating any of them here would create
 # a second source of truth that can silently disagree with the real endpoint.
+#
+# ENDPOINT_NAME was briefly restated here and has been removed: its value still
+# ended in the literal placeholder `<endpoint-id>`, and that string flows straight
+# into generate_database_credential(endpoint=...). If the resource is not attached,
+# resolve_settings() says so by name — which is the failure we want.
 #
 # Also absent: FRONTEND_ORIGIN. The React build is served by this same process
 # from frontend/dist, so requests are same-origin and the CORS middleware is not

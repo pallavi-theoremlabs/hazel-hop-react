@@ -24,7 +24,13 @@ Two things this module is careful about:
   ``expiration_time`` (an ISO string). Reaching for the wrong attribute fails at
   runtime inside the connect hook, roughly an hour after a green deploy.
 
-Verified against databricks-sdk 0.127.0::
+  There is deliberately no fallback between the two. They address different
+  products with different signatures, so picking whichever exists would connect
+  to the wrong database rather than fail — which is worse than the AttributeError
+  it would be papering over. ``assert_sdk_capabilities()`` below turns that
+  AttributeError into a startup error that names the installed version instead.
+
+Verified against databricks-sdk 0.127.0, which requirements.txt pins exactly::
 
     generate_database_credential(endpoint: str, *, claims=None, expire_time=None,
                                  group_name=None, ttl=None) -> DatabaseCredential
@@ -33,13 +39,90 @@ Verified against databricks-sdk 0.127.0::
 
 from __future__ import annotations
 
+import inspect
 import os
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _dist_version
 
 from databricks.sdk import WorkspaceClient
 
 # Injected by the attached Lakebase project resource. All six are required.
 INJECTED_VARS = ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGSSLMODE", "ENDPOINT_NAME")
+
+
+def sdk_version() -> str:
+    """The databricks-sdk version pip actually resolved in this container.
+
+    Read from the installed distribution rather than a module attribute, because
+    that is what pip decided; the attribute is what the package says about itself.
+    They agree in a healthy install, and where they disagree the disagreement is
+    itself the bug.
+    """
+    try:
+        return _dist_version("databricks-sdk")
+    except PackageNotFoundError:  # importable, but not as an installed dist
+        try:
+            from databricks.sdk.version import __version__
+
+            return f"{__version__} (no installed distribution)"
+        except ImportError:
+            return "unknown"
+
+
+def assert_sdk_capabilities() -> None:
+    """Fail at startup if the SDK cannot mint Autoscaling credentials.
+
+    Without this, an SDK missing ``postgres`` surfaces as an AttributeError raised
+    from ``mint_password`` four frames inside SQLAlchemy's pool, naming neither the
+    version installed nor what it has instead. That is precisely how
+    ``databricks-sdk>=0.30`` reached production.
+
+    Checked against the *class*, never an instance: ``WorkspaceClient.postgres`` is
+    a property descriptor, so this needs no credentials and makes no network call.
+    A check that can also fail for auth reasons cannot reliably report a version
+    mismatch — it would just report the wrong cause.
+    """
+    version = sdk_version()
+
+    if not hasattr(WorkspaceClient, "postgres"):
+        # dir() has ~138 public names here; all of them would bury the one that
+        # matters. The neighbours worth seeing are the database-shaped ones.
+        related = sorted(
+            a
+            for a in dir(WorkspaceClient)
+            if not a.startswith("_") and ("postgres" in a or "database" in a)
+        )
+        raise RuntimeError(
+            f"databricks-sdk {version} has no WorkspaceClient.postgres; Lakebase "
+            "Autoscaling credential minting requires it. Database-related attributes "
+            f"present: {related}. There is deliberately no fallback to w.database: "
+            "that is the Lakebase *instances* API, taking instance_names rather than "
+            "an endpoint, and using it would connect to a different product instead "
+            "of failing. Pin databricks-sdk==0.127.0 in requirements.txt and redeploy."
+        )
+
+    try:
+        from databricks.sdk.service.postgres import PostgresAPI
+    except ImportError as exc:
+        raise RuntimeError(
+            f"databricks-sdk {version}: WorkspaceClient.postgres exists but "
+            f"databricks.sdk.service.postgres could not be imported ({exc}). The "
+            "credential API cannot be called, and guessing at a moved module path "
+            "would be a guess about which product answers. Pin "
+            "databricks-sdk==0.127.0 in requirements.txt and redeploy."
+        ) from exc
+
+    params = list(inspect.signature(PostgresAPI.generate_database_credential).parameters)
+    if "endpoint" not in params:
+        raise RuntimeError(
+            f"databricks-sdk {version}: postgres.generate_database_credential takes "
+            f"{params}, with no 'endpoint' parameter. Autoscaling projects are "
+            "addressed by endpoint; 'instance_names' would mean this is the instances "
+            "API under a familiar name. Calling it anyway would mint a credential for "
+            "something other than the attached Lakebase project. Pin "
+            "databricks-sdk==0.127.0 in requirements.txt and redeploy."
+        )
 
 
 @dataclass(frozen=True)

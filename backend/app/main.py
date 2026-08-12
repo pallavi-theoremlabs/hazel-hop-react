@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import BACKEND_DIR, settings, validate_backend_settings
 from app.db import connection, credential_status, init_db
+from app.lakebase import assert_sdk_capabilities, sdk_version
 from app.routers.cases import router as cases_router
 from app.routers.dev import router as dev_router
 from app.routers.public import router as public_router
@@ -23,6 +24,11 @@ INDEX_HTML = FRONTEND_DIST / "index.html"
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # First, and before anything opens a connection: which SDK the container
+    # actually resolved is the first question asked whenever an API surface moves,
+    # and the assertion below is only legible next to the answer.
+    assert_sdk_capabilities()
+    logger.info("[Hazel] databricks-sdk=%s", sdk_version())
     validate_backend_settings()
     probe_storage()
     init_db()
@@ -65,6 +71,9 @@ def health():
         "database": database,
         "credential": credential_status(),
         "storage": {"backend": storage.backend, "location": storage.location},
+        # Readable without log access, which is the case that matters when the app
+        # is up but a dependency has moved underneath it.
+        "sdk": {"databricks_sdk": sdk_version()},
     }
     return JSONResponse(payload, status_code=200 if database["reachable"] else 503)
 

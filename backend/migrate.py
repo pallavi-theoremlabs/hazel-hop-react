@@ -23,7 +23,12 @@ import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.lakebase import mint_password, resolve_settings  # noqa: E402
+from app.lakebase import (  # noqa: E402
+    assert_sdk_capabilities,
+    mint_password,
+    resolve_settings,
+    sdk_version,
+)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
@@ -225,6 +230,16 @@ def main() -> int:
         help="grant schema access to the App's service principal client id",
     )
     args = parser.parse_args()
+
+    # Ahead of connect(), and caught separately: an SDK without the Autoscaling
+    # credential API is a dependency problem, not a connection problem, and the
+    # handler below would file it under "could not connect".
+    try:
+        assert_sdk_capabilities()
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    print(f"databricks-sdk {sdk_version()}")
 
     try:
         conn = connect()

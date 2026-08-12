@@ -1,11 +1,47 @@
+# Deployment artifact, not a library spec. Every version is an exact pin, taken
+# from the verified venv; a `>=` here is a future AttributeError in the deployed
+# container. That is not hypothetical: `databricks-sdk>=0.30` let the App resolve
+# an SDK with no WorkspaceClient.postgres, and Lakebase credential minting died
+# four frames inside SQLAlchemy's connection pool.
+#
+# To refresh: pip freeze in the venv, verify, and replace this file wholesale.
+# Do not relax a pin to resolve an install failure — pin the other side instead.
+
 fastapi==0.116.1
 uvicorn==0.33.0
 httpx==0.28.1
 python-dotenv==1.0.1
 python-multipart==0.0.20
+pydantic==2.13.4
+psycopg[binary]==3.3.4
+SQLAlchemy==2.0.52
+databricks-sdk==0.127.0
 
-# Lakebase Postgres. Verified installed: psycopg 3.3.4, SQLAlchemy 2.0.52,
-# databricks-sdk 0.127.0 (on Python 3.14).
-psycopg[binary]>=3.2,<4
-SQLAlchemy>=2.0,<3
-databricks-sdk>=0.30
+# Transitive closure, pinned from the same venv. Named here so that a release of
+# anything below cannot change what the container runs. Nothing imports these
+# directly; they are dependencies of the block above.
+annotated-types==0.8.0
+anyio==4.14.2
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.0
+click==8.4.2
+colorama==0.4.6
+cryptography==50.0.0
+google-auth==2.56.3
+greenlet==3.5.5
+h11==0.16.0
+httpcore==1.0.9
+idna==3.18
+protobuf==6.33.6
+psycopg-binary==3.3.4
+pyasn1==0.6.4
+pyasn1-modules==0.4.2
+pycparser==3.0
+pydantic-core==2.46.4
+requests==2.34.2
+starlette==0.47.3
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+tzdata==2026.3
+urllib3==2.7.0
