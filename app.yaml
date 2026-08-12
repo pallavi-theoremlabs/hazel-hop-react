@@ -40,6 +40,9 @@ env:
 
   - name: "HAZEL_DEV_MODE"
     value: "false"
+    
+  - name: "ENDPOINT_NAME"
+    value: "projects/4fd8b705-0ed7-4537-80df-3ab2b443e565/branches/br-quiet-lake-d8auou47/endpoints/<endpoint-id>"
 
 # Deliberately absent: PGHOST, PGPORT, PGDATABASE, PGUSER, PGSSLMODE and
 # ENDPOINT_NAME. Those are injected by the attached Lakebase project resource and
