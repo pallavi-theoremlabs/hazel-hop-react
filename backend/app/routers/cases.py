@@ -1,6 +1,5 @@
 import hashlib
 import logging
-import os
 import re
 from pathlib import Path
 from uuid import uuid4
@@ -8,9 +7,10 @@ from uuid import uuid4
 import httpx
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from psycopg.types.json import Jsonb
+from starlette.concurrency import run_in_threadpool
 
-from app.config import BACKEND_DIR
 from app.db import STAGES, connection, require_case, row_dict, update_stage, utc_now
+from app.storage import storage
 from app.models import (
     ACTION_REQUIRED_STATUSES,
     UNRESOLVED_STATUSES,
@@ -37,9 +37,6 @@ from app.services.institution_profile_schema import (
 )
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(BACKEND_DIR / "uploads")))
-if not UPLOAD_DIR.is_absolute():
-    UPLOAD_DIR = BACKEND_DIR / UPLOAD_DIR
 ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx"}
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 logger = logging.getLogger("uvicorn.error")
@@ -51,33 +48,6 @@ REVIEW_STATUS_MAP = {
     "rejected": ("rejected", "Rejected"),
     "partial": ("partial", "Needs explicit handling"),
 }
-
-
-def ensure_upload_dir() -> Path:
-    """Resolve and validate UPLOAD_DIR once, at startup.
-
-    In production this points at a Unity Catalog Volume reached over FUSE, which
-    behaves differently from a local filesystem and is only mountable from inside
-    the App — so it cannot be exercised before deploy. Checking it here turns a
-    misconfigured volume into a clear startup failure rather than a 500 on the
-    first member upload, halfway through onboarding.
-
-    This also replaces a per-request mkdir that ran on every single upload.
-    """
-    logger.info("[Hazel] UPLOAD_DIR resolved to %s", UPLOAD_DIR)
-    try:
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        probe = UPLOAD_DIR / ".hazel-write-probe"
-        probe.write_bytes(b"")
-        probe.unlink()
-    except OSError as exc:
-        raise RuntimeError(
-            f"UPLOAD_DIR {UPLOAD_DIR} is not writable ({exc}). On Databricks Apps "
-            "this is a Unity Catalog Volume path; check that it exists and that the "
-            "app service principal holds READ VOLUME and WRITE VOLUME on it."
-        ) from exc
-    logger.info("[Hazel] UPLOAD_DIR is writable")
-    return UPLOAD_DIR
 
 
 def get_or_404(conn, case_id):
@@ -192,10 +162,9 @@ def backfill_case_document_hashes(conn, case_id):
         (case_id,),
     ).fetchall()
     for row in rows:
-        stored_path = UPLOAD_DIR / Path(row["stored_name"]).name
         try:
-            contents = stored_path.read_bytes()
-        except OSError:
+            contents = storage.read(row["stored_name"])
+        except OSError:  # FileNotFoundError from either storage backend
             logger.warning(
                 "Could not backfill SHA-256 for Hazel document %s", row["id"]
             )
@@ -242,11 +211,14 @@ async def sync_hazel_document(case, document, contents=None):
             }
         else:
             if contents is None:
-                safe_stored_name = Path(document["stored_name"]).name
-                stored_path = UPLOAD_DIR / safe_stored_name
-                if not stored_path.is_file():
-                    raise RuntimeError("Hazel's stored document file could not be found")
-                contents = stored_path.read_bytes()
+                # Off the event loop: against a Volume this is a Files API round
+                # trip through the control plane, not a local read.
+                try:
+                    contents = await run_in_threadpool(storage.read, document["stored_name"])
+                except FileNotFoundError as exc:
+                    raise RuntimeError(
+                        "Hazel's stored document file could not be found"
+                    ) from exc
             file_sha256 = document.get("file_sha256") or hashlib.sha256(contents).hexdigest()
             if not document.get("file_sha256"):
                 with connection() as conn:
@@ -714,26 +686,39 @@ async def upload_document(case_id: str, file: UploadFile = File(...), document_t
     file_sha256 = hashlib.sha256(contents).hexdigest()
     safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(original_name).stem).strip("-") or "document"
     stored_name = f"{case_id}-{uuid4().hex}-{safe_stem}{suffix}"
-    # The directory was created and write-probed at startup by ensure_upload_dir().
-    (UPLOAD_DIR / stored_name).write_bytes(contents)
+
+    # Ordering is unchanged from the original: the file is stored first, then the
+    # row is inserted, and a failed insert compensates by deleting the file. Both
+    # halves run in a worker thread — against a Volume the write is a Files API
+    # round trip, and the database driver is synchronous, so leaving either on the
+    # event loop would stall every other request for the duration of an upload.
+    await run_in_threadpool(storage.write, stored_name, contents)
     try:
-        with connection() as conn:
-            backfill_case_document_hashes(conn, case_id)
-            # RETURNING replaces cursor.lastrowid, which is a sqlite3-ism with no
-            # psycopg equivalent. It also removes the follow-up SELECT.
-            document = row_dict(
-                conn.execute(
-                    """INSERT INTO documents
-                    (case_id, document_type, original_name, stored_name, size_bytes,
-                     created_at, file_sha256) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    RETURNING *""",
-                    (case_id, document_type, original_name, stored_name, len(contents), utc_now(), file_sha256),
-                ).fetchone()
-            )
+        document = await run_in_threadpool(
+            _insert_document, case_id, document_type, original_name, stored_name,
+            len(contents), file_sha256,
+        )
     except Exception:
-        (UPLOAD_DIR / stored_name).unlink(missing_ok=True)
+        await run_in_threadpool(storage.delete, stored_name)
         raise
     return await sync_hazel_document(case, document, contents)
+
+
+def _insert_document(case_id, document_type, original_name, stored_name, size_bytes, file_sha256):
+    with connection() as conn:
+        backfill_case_document_hashes(conn, case_id)
+        # RETURNING replaces cursor.lastrowid, which is a sqlite3-ism with no
+        # psycopg equivalent. It also removes the follow-up SELECT.
+        return row_dict(
+            conn.execute(
+                """INSERT INTO documents
+                (case_id, document_type, original_name, stored_name, size_bytes,
+                 created_at, file_sha256) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING *""",
+                (case_id, document_type, original_name, stored_name, size_bytes,
+                 utc_now(), file_sha256),
+            ).fetchone()
+        )
 
 
 @router.post("/{case_id}/documents/{document_id}/coverbase-sync")
@@ -767,7 +752,7 @@ async def delete_document(case_id: str, document_id: int):
                 AND coverbase_document_id = %s LIMIT 1""",
                 (case_id, row["coverbase_document_id"]),
             ).fetchone()
-    (UPLOAD_DIR / row["stored_name"]).unlink(missing_ok=True)
+    await run_in_threadpool(storage.delete, row["stored_name"])
     if (
         row["coverbase_document_id"]
         and case.get("coverbase_session_id")

@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -10,6 +9,7 @@ from psycopg.types.json import Jsonb
 from app.db import connection, require_case, utc_now
 from app.models import clarification_payload
 from app.schemas import DevCaseCreate, DevClarificationCreate
+from app.storage import storage
 
 router = APIRouter(prefix="/api/dev", tags=["local-development"])
 logger = logging.getLogger("uvicorn.error")
@@ -132,14 +132,13 @@ def reset_case(case_id: str):
         )
         reset = case_payload(conn, case_id)
 
-    from app.routers.cases import UPLOAD_DIR
-
+    # This handler is a plain `def`, so FastAPI already runs it in a worker
+    # thread; the storage calls below may be Files API round trips.
     for stored_name in stored_names:
-        safe_name = Path(stored_name).name
         try:
-            (UPLOAD_DIR / safe_name).unlink(missing_ok=True)
+            storage.delete(stored_name)
         except OSError as exc:
-            logger.warning("Could not remove reset-case upload %s: %s", safe_name, exc)
+            logger.warning("Could not remove reset-case upload %s: %s", stored_name, exc)
     logger.info(
         "[Hazel] reset synthetic onboarding case %s; remote Coverbase session was not deleted%s",
         case_id,

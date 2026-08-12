@@ -10,10 +10,10 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import BACKEND_DIR, settings, validate_backend_settings
 from app.db import connection, credential_status, init_db
-from app.routers.cases import ensure_upload_dir
 from app.routers.cases import router as cases_router
 from app.routers.dev import router as dev_router
 from app.routers.public import router as public_router
+from app.storage import probe_storage, storage
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -24,7 +24,7 @@ INDEX_HTML = FRONTEND_DIST / "index.html"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     validate_backend_settings()
-    ensure_upload_dir()
+    probe_storage()
     init_db()
     yield
 
@@ -64,6 +64,7 @@ def health():
         "coverbase_mode": settings.coverbase_mode,
         "database": database,
         "credential": credential_status(),
+        "storage": {"backend": storage.backend, "location": storage.location},
     }
     return JSONResponse(payload, status_code=200 if database["reachable"] else 503)
 
