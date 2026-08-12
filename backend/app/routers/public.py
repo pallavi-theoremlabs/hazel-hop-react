@@ -1,8 +1,8 @@
-import json
 import logging
 from uuid import uuid4
 
 from fastapi import APIRouter
+from psycopg.types.json import Jsonb
 
 from app.db import connection, utc_now
 from app.schemas import SubmitInterestCreate
@@ -33,14 +33,14 @@ def submit_interest(payload: SubmitInterestCreate):
             """INSERT INTO onboarding_cases
             (id, institution_id, current_stage, review_status, hazel_review_status,
              additional_information_required, created_at, updated_at)
-            VALUES (?, ?, 'NDA_PENDING', 'Not started', NULL, 0, ?, ?)""",
+            VALUES (%s, %s, 'NDA_PENDING', 'Not started', NULL, false, %s, %s)""",
             (case_id, f"LOCAL-INQUIRY-{suffix}", now, now),
         )
         conn.execute(
             """INSERT INTO express_interest_submissions
             (case_id, legal_name, fdic_certificate_number, institution_type, website,
              contact_name, contact_title, contact_email, data_json, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 case_id,
                 payload.legal_name,
@@ -50,16 +50,18 @@ def submit_interest(payload: SubmitInterestCreate):
                 payload.contact_name,
                 payload.contact_title,
                 payload.contact_email,
-                json.dumps(inquiry_context),
+                # data_json is jsonb. Postgres has no assignment cast from text to
+                # jsonb, so json.dumps() here would fail outright.
+                Jsonb(inquiry_context),
                 now,
             ),
         )
         conn.execute(
-            "INSERT INTO institution_profiles (case_id, additional_responses_json, updated_at) VALUES (?, '{}', ?)",
+            "INSERT INTO institution_profiles (case_id, additional_responses_json, updated_at) VALUES (%s, '{}', %s)",
             (case_id, now),
         )
         conn.execute(
-            "INSERT INTO due_diligence (case_id, data_json, updated_at) VALUES (?, '{}', ?)",
+            "INSERT INTO due_diligence (case_id, data_json, updated_at) VALUES (%s, '{}', %s)",
             (case_id, now),
         )
 

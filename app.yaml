@@ -1,0 +1,51 @@
+# Databricks Apps configuration for hazel-hop-demo.
+#
+# Entry point: `--app-dir backend` puts the backend package on sys.path so
+# `app.main:app` resolves. There is deliberately no root main.py shim — two entry
+# mechanisms that disagree fail as an ImportError at startup that reads like a
+# packaging problem. This is the only one.
+#
+# No --port. The command array is exec'd without a shell, so "$UVICORN_PORT"
+# would be passed to uvicorn as that literal string. Uvicorn reads UVICORN_PORT
+# from the environment itself, which Apps sets alongside DATABRICKS_APP_PORT.
+#
+# No --workers. The default of 1 is load-bearing, not incidental: CoverbaseService
+# is a module-level singleton holding per-session state in memory (one of those
+# dicts is consulted in live mode, not only mock), so a second worker would serve
+# requests that cannot see it.
+
+command:
+  - "uvicorn"
+  - "app.main:app"
+  - "--host"
+  - "0.0.0.0"
+  - "--app-dir"
+  - "backend"
+
+env:
+  # Coverbase. COVERBASE_BASE_URL is required even in mock mode — config.py
+  # treats a missing value as fatal regardless of mode.
+  - name: "COVERBASE_MODE"
+    value: "mock"
+  - name: "COVERBASE_BASE_URL"
+    value: "https://api.coverbase.app"
+  - name: "COVERBASE_QUESTIONNAIRE_ID"
+    value: ""
+
+  # Unity Catalog Volume, reached over FUSE. Validated and write-probed at
+  # startup by ensure_upload_dir(); the app service principal needs READ VOLUME
+  # and WRITE VOLUME plus USE CATALOG / USE SCHEMA.
+  - name: "UPLOAD_DIR"
+    value: "/Volumes/hazel/onboarding/uploads"
+
+  - name: "HAZEL_DEV_MODE"
+    value: "false"
+
+# Deliberately absent: PGHOST, PGPORT, PGDATABASE, PGUSER, PGSSLMODE and
+# ENDPOINT_NAME. Those are injected by the attached Lakebase project resource and
+# are read from the environment verbatim. Restating any of them here would create
+# a second source of truth that can silently disagree with the real endpoint.
+#
+# Also absent: FRONTEND_ORIGIN. The React build is served by this same process
+# from frontend/dist, so requests are same-origin and the CORS middleware is not
+# in the path.

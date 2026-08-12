@@ -1,4 +1,9 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+// ?? not ||: an empty VITE_API_BASE_URL means "same origin", which is what the
+// Databricks Apps deploy uses. || treats '' as falsy and would rewrite that back
+// to localhost, shipping a bundle that sends every request to the user's own
+// machine. The unset case is caught at build time by scripts/check-env.mjs; the
+// default below is only for `npm run dev`.
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, options)
