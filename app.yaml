@@ -42,15 +42,27 @@ env:
   - name: "HAZEL_DEV_MODE"
     value: "false"
 
-# Deliberately absent: PGHOST, PGPORT, PGDATABASE, PGUSER, PGSSLMODE and
-# ENDPOINT_NAME. Those are injected by the attached Lakebase project resource and
-# are read from the environment verbatim. Restating any of them here would create
-# a second source of truth that can silently disagree with the real endpoint.
-#
-# ENDPOINT_NAME was briefly restated here and has been removed: its value still
-# ended in the literal placeholder `<endpoint-id>`, and that string flows straight
-# into generate_database_credential(endpoint=...). If the resource is not attached,
-# resolve_settings() says so by name — which is the failure we want.
+  # NOT injected by the Lakebase resource — the one connection detail the resource
+  # does not supply, so this is the only source rather than a second one. Settled
+  # empirically: a deploy with this absent died in the lifespan with
+  # missing ['ENDPOINT_NAME'] while all five PG* vars were present.
+  #
+  # Name form, not UID form. The console URL addresses this branch by UID
+  # (br-quiet-lake-d8auou47), but the API matches on the resource name, which the
+  # Lakebase UI shows as projects/hazel-hop-lakebase/branches/production. An
+  # earlier revision of this entry was in UID form and ended in the literal
+  # placeholder `<endpoint-id>`; that string flows straight into
+  # generate_database_credential(endpoint=...), so it is copied whole from the
+  # UI and never assembled from parts here. Confirmed 2026-08-12.
+  - name: "ENDPOINT_NAME"
+    value: "projects/hazel-hop-lakebase/branches/production/endpoints/primary"
+
+# Deliberately absent: PGHOST, PGPORT, PGDATABASE, PGUSER and PGSSLMODE. Those
+# five are injected by the attached Lakebase project resource and are read from
+# the environment verbatim. Restating any of them here would create a second
+# source of truth that can silently disagree with the real endpoint. If the
+# resource is not attached, resolve_settings() says which are missing by name —
+# which is the failure we want.
 #
 # Also absent: FRONTEND_ORIGIN. The React build is served by this same process
 # from frontend/dist, so requests are same-origin and the CORS middleware is not

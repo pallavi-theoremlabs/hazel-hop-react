@@ -5,12 +5,21 @@ credential call lives in exactly one place.
 
 Two things this module is careful about:
 
-* **The injected environment is the only source.** Attaching the Lakebase project
-  as an app resource injects PGHOST/PGPORT/PGDATABASE/PGUSER/PGSSLMODE/
-  ENDPOINT_NAME. Those names are used verbatim — never copied into PG_HOST-style
-  aliases, never defaulted over, and never reconstructed from the SDK. There is
-  deliberately no discovery fallback: anything that fills in a missing host is
-  something that can disagree with the attached resource without saying so.
+* **The environment is the only source.** Attaching the Lakebase project as an app
+  resource injects PGHOST/PGPORT/PGDATABASE/PGUSER/PGSSLMODE — five variables, not
+  six. It does **not** inject ENDPOINT_NAME; app.yaml sets that one explicitly.
+  This was settled by a deploy, not by documentation: with no ENDPOINT_NAME entry
+  the lifespan raised ``missing ['ENDPOINT_NAME']`` while all five PG* vars were
+  present, which is also proof the other five do arrive.
+
+  Because nothing injects ENDPOINT_NAME, app.yaml is its only source rather than a
+  competing second one — the objection that applies to restating an *injected*
+  value does not apply to it.
+
+  All six names are read verbatim — never copied into PG_HOST-style aliases, never
+  defaulted over, and never reconstructed from the SDK. There is deliberately no
+  discovery fallback: anything that fills in a missing host is something that can
+  disagree with the attached resource without saying so.
 
 * **The credential API is the Autoscaling one.** ``databricks-sdk`` defines
   ``generate_database_credential`` twice, on two different services, returning two
@@ -47,8 +56,11 @@ from importlib.metadata import version as _dist_version
 
 from databricks.sdk import WorkspaceClient
 
-# Injected by the attached Lakebase project resource. All six are required.
-INJECTED_VARS = ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGSSLMODE", "ENDPOINT_NAME")
+# All six are required. The five PG* names are injected by the attached Lakebase
+# project resource; ENDPOINT_NAME is not, and comes from app.yaml. Named
+# REQUIRED_VARS rather than INJECTED_VARS because that distinction is exactly what
+# the old name got wrong, and getting it wrong cost a deploy.
+REQUIRED_VARS = ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGSSLMODE", "ENDPOINT_NAME")
 
 
 def sdk_version() -> str:
@@ -162,21 +174,37 @@ def workspace() -> WorkspaceClient:
 
 
 def resolve_settings() -> PgSettings:
-    """Read connection details from the injected environment.
+    """Read connection details from the environment.
 
     Raises if any variable is missing. In a deployed App all six are present and
     this is a pure environment read; to run migrations from a workstation, export
-    the same six names from the attached resource.
+    all six — the five PG* values from the attached resource, and ENDPOINT_NAME
+    matching what app.yaml sets.
     """
-    missing = [name for name in INJECTED_VARS if not os.environ.get(name)]
+    missing = [name for name in REQUIRED_VARS if not os.environ.get(name)]
     if missing:
+        # The two halves have different causes and different fixes, so name the
+        # one that applies rather than leaving the reader to work it out. A deploy
+        # was lost to exactly that ambiguity: ENDPOINT_NAME was dropped from
+        # app.yaml on the belief the resource would supply it, and it does not.
+        causes = []
+        if [name for name in missing if name != "ENDPOINT_NAME"]:
+            causes.append(
+                "The PG* names are injected by the attached Lakebase project "
+                "resource, so a missing one means it is not attached."
+            )
+        if "ENDPOINT_NAME" in missing:
+            causes.append(
+                "ENDPOINT_NAME is NOT injected by the resource — app.yaml sets "
+                "it, so it is missing or empty there."
+            )
         raise RuntimeError(
-            "Lakebase environment is incomplete; missing "
-            f"{missing}. These are injected by the attached Lakebase project "
-            "resource and are the only supported source of connection details; "
-            "there is no fallback, because a value guessed here could disagree "
-            "with the real endpoint without any error. To run migrations locally, "
-            f"export all of: {', '.join(INJECTED_VARS)}"
+            f"Lakebase environment is incomplete; missing {missing}. "
+            + " ".join(causes)
+            + " There is no fallback and nothing is reconstructed here, because a "
+            "value invented at this point could disagree with the real endpoint "
+            "without any error. To run migrations locally, export all of: "
+            f"{', '.join(REQUIRED_VARS)}"
         )
     return PgSettings(
         host=os.environ["PGHOST"],

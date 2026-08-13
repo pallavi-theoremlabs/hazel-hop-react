@@ -4,8 +4,10 @@
     python backend/migrate.py              # apply everything pending
     python backend/migrate.py --verify     # post-apply assertions (§8 step 2)
 
-Connection details come from the injected Lakebase resource variables; the
-password is a freshly minted OAuth token. See app/lakebase.py.
+Connection details come from the environment — five variables injected by the
+Lakebase resource plus ENDPOINT_NAME, which the resource does not inject and
+app.yaml supplies. The password is a freshly minted OAuth token. See
+app/lakebase.py.
 
 Each file is applied inside its own transaction and recorded in
 hazel.schema_migrations. A file that fails rolls back whole, so a partially

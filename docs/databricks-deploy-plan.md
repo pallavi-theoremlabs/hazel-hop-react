@@ -442,24 +442,32 @@ configuration, not as raw env vars. Confirm the resource key names and the injec
 credential variables against the workspace on first deploy rather than assuming them — that
 is step 3 of §8.
 
+**Answered on first deploy (2026-08-12).** The resource injects **five** variables, not six:
+`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGSSLMODE`. It does **not** inject
+`ENDPOINT_NAME`, so `app.yaml` sets that one explicitly. A deploy without it failed in the
+lifespan with `missing ['ENDPOINT_NAME']` — and because `resolve_settings()` reports every
+missing name at once, that same error is the proof the other five do arrive. The value is
+the resource *name*, `projects/hazel-hop-lakebase/branches/production/endpoints/primary`, not
+the UID form the console URL uses.
+
 ### 5.2 Root `requirements.txt`
 
 Apps reads `requirements.txt` from the **repo root**; the existing one is at `backend/`.
 
-```
-fastapi==0.116.1
-uvicorn==0.33.0
-httpx==0.28.1
-python-dotenv==1.0.1
-python-multipart==0.0.20
-pydantic>=2.7,<3
-psycopg[binary]>=3.2,<4
-SQLAlchemy>=2.0,<3
-databricks-sdk>=0.30
-```
-
 `pydantic` is added because the code imports it directly (`schemas/cases.py`) while relying on
 FastAPI to pull it in transitively — fine locally, fragile as a deployment contract.
+
+**Superseded — do not copy the range specifiers this section originally proposed.**
+`databricks-sdk>=0.30` shipped, and the container resolved an SDK with no
+`WorkspaceClient.postgres`; credential minting then died four frames inside SQLAlchemy's pool.
+A range specifier in a deployment artifact is a future `AttributeError` with a delayed fuse.
+
+The live file is [`requirements.txt`](../requirements.txt) at the repo root: every version an
+exact `==` pin, 9 direct plus the 25-package transitive closure, verified closed by a
+clean-venv `pip install` → `pip freeze` round-trip that reproduces the file at 34 packages.
+Refresh it by re-freezing wholesale; do not relax a pin to resolve an install failure.
+`assert_sdk_capabilities()` in `app/lakebase.py` now fails at startup, naming the installed
+version, if the SDK cannot mint Autoscaling credentials.
 
 ---
 
