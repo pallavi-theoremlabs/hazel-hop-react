@@ -19,6 +19,7 @@ const jsonOptions = (method, data) => ({
 })
 
 export const getCase = (caseId) => request(`/api/cases/${caseId}`)
+export const lookupBankByFdic = (fdicCertificateNumber) => request(`/api/public/banks/fdic/${encodeURIComponent(fdicCertificateNumber)}`)
 export const submitInterest = (data) => request('/api/public/submit-interest', jsonOptions('POST', data))
 export const createDevCase = (data) => request('/api/dev/create-case', jsonOptions('POST', data))
 export const resetDevCase = (caseId) => request(`/api/dev/reset-case/${caseId}`, { method: 'POST' })

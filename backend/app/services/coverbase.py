@@ -1043,10 +1043,10 @@ class CoverbaseService:
             cls._collect_response(record, question, responses)
 
         if not questions:
-            raise RuntimeError("Coverbase response did not include Institution Profile questions")
+            raise RuntimeError("Coverbase response did not include Due Diligence questions")
         return {
             "schema_version": "coverbase-intake-session-v1",
-            "title": "Institution Profile",
+            "title": "Due Diligence",
             "description": "Provide additional details about your institution and intended use of the Hazel Network.",
             "sections": [
                 {
@@ -1420,7 +1420,9 @@ class CoverbaseService:
                 updated["response_data"] = updates.get("response_data")
         if "comment" in supplied_fields:
             updated["comment"] = updates.get("comment")
-        updated["reviewed"] = True
+        # Hazel owns the workflow decision to mark a response reviewed. This
+        # adapter preserves that explicit application-layer value.
+        updated["reviewed"] = bool(updates["reviewed"])
 
         response_changed = any(
             updated.get(field) != current.get(field)
@@ -1461,7 +1463,9 @@ class CoverbaseService:
                 )
                 response.raise_for_status()
         logger.info(
-            "[Coverbase] saved reviewed response for question %s", current["question_id"]
+            "[Coverbase] saved response for question %s (reviewed=%s)",
+            current["question_id"],
+            updated["reviewed"],
         )
         return {
             "status": "saved",

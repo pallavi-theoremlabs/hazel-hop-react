@@ -488,7 +488,7 @@ async def load_institution_profile_schema(case_id: str):
                 )
                 raise HTTPException(
                     502,
-                    f"Coverbase Institution Profile generation failed: {exc}",
+                    f"Coverbase Due Diligence generation failed: {exc}",
                 ) from exc
         except (httpx.HTTPError, RuntimeError, ValueError) as exc:
             logger.error(
@@ -498,7 +498,7 @@ async def load_institution_profile_schema(case_id: str):
             )
             raise HTTPException(
                 502,
-                f"Coverbase Institution Profile lookup failed: {exc}",
+                f"Coverbase Due Diligence lookup failed: {exc}",
             ) from exc
     logger.info("[Coverbase] using Hazel fallback schema")
     return {**HAZEL_INSTITUTION_PROFILE_SCHEMA, "source": "fallback"}
@@ -591,7 +591,7 @@ async def save_institution_profile_responses(
             502,
             {
                 "message": (
-                    "Institution Profile responses were saved to Hazel, but Coverbase "
+                        "Due Diligence responses were saved to Hazel, but Coverbase "
                     "synchronization failed. Please retry before continuing."
                 ),
                 "coverbase_response_sync": "error",
@@ -658,7 +658,7 @@ def complete_institution_profile(case_id: str):
             raise HTTPException(
                 422,
                 {
-                    "message": "Express Interest data or required Institution Profile responses are incomplete.",
+                    "message": "Express Interest data or required Due Diligence responses are incomplete.",
                     "missing": missing,
                 },
             )
@@ -790,8 +790,17 @@ def complete_documents(case_id: str):
                 "The required BSA/AML/OFAC policy is stored in Hazel but must finish syncing to Coverbase before continuing.",
             )
         now = utc_now()
-        update_stage(conn, case_id, "DUE_DILIGENCE", documents_completed_at=now)
-        return {"completed_at": now, "current_stage": "DUE_DILIGENCE"}
+        # The former standalone Due Diligence UI has been retired. The
+        # institution-profile stage now carries that user-facing name, so a
+        # completed document stage advances directly to Risk Questions.
+        update_stage(
+            conn,
+            case_id,
+            "RISK_QUESTIONS",
+            documents_completed_at=now,
+            due_diligence_completed_at=now,
+        )
+        return {"completed_at": now, "current_stage": "RISK_QUESTIONS"}
 
 
 @router.get("/{case_id}/due-diligence")

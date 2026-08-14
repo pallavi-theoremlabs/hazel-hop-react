@@ -65,6 +65,28 @@ def init_db():
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS institutions (
+                id TEXT PRIMARY KEY,
+                legal_name TEXT NOT NULL,
+                fdic_certificate TEXT NOT NULL UNIQUE,
+                rssd_id TEXT,
+                institution_type TEXT NOT NULL,
+                registration_contact_email TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS rafa_screenings (
+                institution_id TEXT PRIMARY KEY REFERENCES institutions(id) ON DELETE CASCADE,
+                fdic_certificate TEXT NOT NULL,
+                rssd_id TEXT,
+                rafa_score REAL NOT NULL,
+                rafa_status TEXT NOT NULL,
+                rating_label TEXT,
+                composite_rating TEXT,
+                profile_year TEXT,
+                profile_quarter TEXT,
+                screened_at TEXT NOT NULL,
+                CHECK (rafa_status IN ('accepted', 'rejected'))
+            );
             CREATE TABLE IF NOT EXISTS institution_profiles (
                 case_id TEXT PRIMARY KEY REFERENCES onboarding_cases(id) ON DELETE CASCADE,
                 legal_name TEXT, fdic_certificate_number TEXT, rssd_id TEXT,
