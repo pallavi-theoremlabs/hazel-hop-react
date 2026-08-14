@@ -1,33 +1,35 @@
 import React from "react";
+import { useTranslation } from 'react-i18next'
 
 export const STAGES = [
-  ['NDA_PENDING', 'NDA', 'nda'],
-  ['INSTITUTION_PROFILE', 'Institution Profile', 'institution-profile'],
-  ['DOCUMENTS', 'Documents', 'documents'],
-  ['DUE_DILIGENCE', 'Due Diligence', 'due-diligence'],
-  ['RISK_QUESTIONS', 'Risk Questions', 'risk-questions'],
-  ['HAZEL_REVIEW', 'Hazel Review', 'review'],
+  ['NDA_PENDING', 'stages.nda', 'nda'],
+  ['INSTITUTION_PROFILE', 'stages.dueDiligence', 'due-diligence'],
+  ['DOCUMENTS', 'stages.documents', 'documents'],
+  ['RISK_QUESTIONS', 'stages.riskQuestions', 'risk-questions'],
+  ['HAZEL_REVIEW', 'stages.hazelReview', 'review'],
 ]
 
 const PROGRESS_STAGES = [
   ...STAGES,
-  ['ESIGN', 'eSign', 'esign'],
-  ['ACCOUNT_OPENING', 'Account Opening', 'account-opening'],
+  ['ESIGN', 'stages.esign', 'esign'],
+  ['ACCOUNT_OPENING', 'stages.accountOpening', 'account-opening'],
 ]
 
 export const stageIndex = (stage) => {
   if (stage === 'NDA_ACCEPTED') return 0
+  if (stage === 'DUE_DILIGENCE') return STAGES.findIndex(([key]) => key === 'RISK_QUESTIONS')
   return Math.max(0, STAGES.findIndex(([key]) => key === stage))
 }
 
 export default function ProgressTracker({ currentStage }) {
+  const { t } = useTranslation('onboarding')
   const current = stageIndex(currentStage)
   return (
     <div className="tracker" aria-label="Onboarding progress">
-      {PROGRESS_STAGES.map(([key, label], index) => (
+      {PROGRESS_STAGES.map(([key, labelKey], index) => (
         <div key={key} className={`track ${index < current ? 'done' : index === current ? 'current' : ''}`}>
           <div className="track-bar" />
-          <span>{label}</span>
+          <span>{t(labelKey)}</span>
         </div>
       ))}
     </div>

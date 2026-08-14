@@ -1,5 +1,6 @@
 import React from "react";
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useCaseContext } from '../App'
 import Button from '../components/Button'
@@ -12,6 +13,8 @@ import { acceptNda } from '../services/api'
 const NDA_DOCUMENT = '/assets/vantage-hazel-mutual-nda.html'
 
 export default function NdaPage() {
+  const { t } = useTranslation(['onboarding', 'common'])
+  const copy = (key) => t(`onboarding:nda.${key}`)
   const { caseId } = useParams()
   const navigate = useNavigate()
   const { caseData, refreshCase } = useCaseContext()
@@ -19,7 +22,7 @@ export default function NdaPage() {
   const [accepted, setAccepted] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const acceptedAt = completed && caseData.nda_accepted_at ? new Date(caseData.nda_accepted_at).toLocaleString() : 'Not yet accepted'
+  const acceptedAt = completed && caseData.nda_accepted_at ? new Date(caseData.nda_accepted_at).toLocaleString() : copy('notAccepted')
 
   async function submit() {
     setBusy(true); setError('')
@@ -31,36 +34,36 @@ export default function NdaPage() {
 
   return <div className="nda-layout">
     <div className="nda-main-content">
-      <PageHeader eyebrow="Confidentiality" title="Mutual Non-Disclosure Agreement" description={completed ? 'The NDA has been accepted. Continue to Institution Profile when ready.' : 'Review and accept the Vantage Bank Texas agreement before continuing to Institution Profile.'} action={<StatusBadge tone={completed ? 'success' : 'warning'}>{completed ? 'Accepted' : 'Not accepted'}</StatusBadge>} />
-      <Card title="Agreement">
-        <p className="sub">The complete seven-page agreement provided by Vantage Bank Texas is available below without changes to its legal language.</p>
+      <PageHeader eyebrow={copy('eyebrow')} title={copy('title')} description={completed ? copy('descriptionComplete') : copy('descriptionPending')} action={<StatusBadge tone={completed ? 'success' : 'warning'}>{completed ? t('common:status.accepted') : copy('notAccepted')}</StatusBadge>} />
+      <Card title={copy('agreement')}>
+        <p className="sub">{copy('agreementDescription')}</p>
         <div className="nda-preview-card"><iframe className="nda-preview-frame" src={NDA_DOCUMENT} title="Mutual Non-Disclosure Agreement preview" /></div>
       </Card>
       <section className="nda-signer">
-        <h3>Authorized representative</h3>
-        <p><strong>Authorized applicant</strong><br />{caseData.primary_applicant_email || 'Test applicant email unavailable'}</p>
-        <p>The representative must be authorized to accept agreements on behalf of the institution.</p>
+        <h3>{copy('representative')}</h3>
+        <p><strong>{copy('authorizedApplicant')}</strong><br />{caseData.primary_applicant_email || 'Test applicant email unavailable'}</p>
+        <p>{copy('representativeDescription')}</p>
       </section>
-      <Card title={completed ? 'Acceptance recorded' : 'Accept Agreement'}>
-        {completed ? <div className="alert success"><strong>NDA accepted</strong><br />Your Mutual Non-Disclosure Agreement has been accepted. Institution Profile is now available.</div> : <p className="sub">Review the agreement and acknowledge your acceptance of the Mutual Non-Disclosure Agreement.</p>}
-        <div className="nda-acceptance-details"><div><span>Applicant</span><strong>{caseData.primary_applicant_email || 'Authorized applicant'}</strong></div><div><span>Institution</span><strong>{caseData.legal_name || 'Synthetic test institution'}</strong></div><div><span>{completed ? 'Acceptance date and time' : 'Date'}</span><strong>{completed ? acceptedAt : new Date().toLocaleDateString()}</strong></div></div>
-        {!completed && <label className="choice nda-acknowledgement"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /><span>I have reviewed and agree to the Hazel Network Mutual Non-Disclosure Agreement and confirm that I am authorized to accept it on behalf of my institution.</span></label>}
+      <Card title={completed ? copy('recordedTitle') : copy('acceptTitle')}>
+        {completed ? <div className="alert success"><strong>{copy('acceptedTitle')}</strong><br />{copy('acceptedDescription')}</div> : <p className="sub">{copy('pendingDescription')}</p>}
+        <div className="nda-acceptance-details"><div><span>{copy('applicant')}</span><strong>{caseData.primary_applicant_email || copy('authorizedApplicant')}</strong></div><div><span>{copy('institution')}</span><strong>{caseData.legal_name || 'Synthetic test institution'}</strong></div><div><span>{completed ? copy('acceptedAt') : copy('date')}</span><strong>{completed ? acceptedAt : new Date().toLocaleDateString()}</strong></div></div>
+        {!completed && <label className="choice nda-acknowledgement"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /><span>{copy('acknowledgement')}</span></label>}
         {error && <div className="alert danger">{error}</div>}
         <div className="actions">
-          {completed ? <><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>Return to Overview</Button><Button onClick={() => navigate(`/case/${caseId}/institution-profile`)}>Next Step: Institution Profile</Button></> : <><Button disabled={!accepted || busy} onClick={submit}>{busy ? 'Recording acceptance…' : 'Accept Mutual NDA'}</Button><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>Return to Overview</Button></>}
+          {completed ? <><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button><Button onClick={() => navigate(`/case/${caseId}/due-diligence`)}>{copy('next')}</Button></> : <><Button disabled={!accepted || busy} onClick={submit}>{busy ? copy('recording') : copy('accept')}</Button><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button></>}
         </div>
       </Card>
     </div>
     <aside className="nda-pdf-panel" aria-label="Read-only NDA preview">
-      <h2>PDF Preview (Read-Only)</h2>
+      <h2>{copy('preview')}</h2>
       <div className="nda-pdf-toolbar"><span className="nda-pdf-page-indicator">1 / 7</span><div className="nda-pdf-tools" aria-hidden="true"><span className="nda-pdf-tool">−</span><span className="nda-pdf-tool nda-pdf-zoom">100%</span><span className="nda-pdf-tool">+</span><span className="nda-pdf-tool">⇩</span><span className="nda-pdf-tool">⎙</span></div></div>
       <div className="nda-pdf-viewport"><iframe className="nda-pdf-page" src={NDA_DOCUMENT} title="Read-only Mutual Non-Disclosure Agreement" /></div>
       <section className="nda-pdf-summary">
-        <h3>Execution Summary</h3>
-        <dl className="nda-pdf-audit"><dt>Applicant</dt><dd>{caseData.primary_applicant_email || 'Authorized applicant'}</dd><dt>Institution</dt><dd>{caseData.legal_name || 'Synthetic test institution'}</dd><dt>Date accepted</dt><dd>{acceptedAt}</dd><dt>IP address</dt><dd>{completed ? '192.0.2.10' : 'Pending acceptance'}</dd><dt>Document version</dt><dd>NDA-2025.01</dd><dt>Transaction ID</dt><dd>{completed ? 'NDA-0000123456' : 'Pending acceptance'}</dd></dl>
-        <div className="nda-pdf-acknowledgement"><strong>Electronic acknowledgement</strong>{completed ? 'The authorized representative acknowledged that they reviewed and agreed to the Mutual Non-Disclosure Agreement.' : 'No electronic acknowledgement has been recorded yet.'}</div>
+        <h3>{copy('summary')}</h3>
+        <dl className="nda-pdf-audit"><dt>{copy('applicant')}</dt><dd>{caseData.primary_applicant_email || copy('authorizedApplicant')}</dd><dt>{copy('institution')}</dt><dd>{caseData.legal_name || 'Synthetic test institution'}</dd><dt>{copy('dateAccepted')}</dt><dd>{acceptedAt}</dd><dt>{copy('ipAddress')}</dt><dd>{completed ? '192.0.2.10' : copy('pendingAcceptance')}</dd><dt>{copy('documentVersion')}</dt><dd>NDA-2025.01</dd><dt>{copy('transactionId')}</dt><dd>{completed ? 'NDA-0000123456' : copy('pendingAcceptance')}</dd></dl>
+        <div className="nda-pdf-acknowledgement"><strong>{copy('electronicAcknowledgement')}</strong>{completed ? copy('acknowledgementRecorded') : copy('acknowledgementPending')}</div>
       </section>
-      <div className="nda-pdf-actions"><Button variant="secondary" onClick={() => window.open(NDA_DOCUMENT, '_blank')}>Download PDF</Button><Button variant="secondary" onClick={() => window.print()}>Print</Button></div>
+      <div className="nda-pdf-actions"><Button variant="secondary" onClick={() => window.open(NDA_DOCUMENT, '_blank')}>{copy('download')}</Button><Button variant="secondary" onClick={() => window.print()}>{copy('print')}</Button></div>
     </aside>
   </div>
 }

@@ -72,7 +72,7 @@ NDA_ACCEPTED
 → HAZEL_REVIEW
 ```
 
-The seeded synthetic case starts on NDA. Every transition is persisted in SQLite and guarded in both the React router and FastAPI routes. Profile saves never start Coverbase. The user explicitly starts risk processing only after Institution Profile, required Documents, and Due Diligence are complete.
+The seeded synthetic case starts on NDA. Every transition is persisted in SQLite and guarded in both the React router and FastAPI routes. The member journey is NDA → Due Diligence → Documents → Risk Questions → Hazel Review. The Due Diligence screen uses the backward-compatible `institution-profile` API contract; saving it never starts a second Coverbase intake.
 
 Coverbase-generated answers remain suggestions. Member edits and confirmations are stored in Hazel's `risk_answers` table, separately from provider session data. The member-facing review page omits raw scores, internal weights, private notes, and operator-only reasoning.
 
@@ -80,7 +80,7 @@ Uploaded files are validated for extension and 25 MB size, assigned server-gener
 
 ## API overview
 
-The backend exposes the public Hazel inquiry endpoint at `/api/public/submit-interest`, followed by case, NDA acceptance, Institution Profile, Documents, Due Diligence, Coverbase intake, Risk Questions, member answer, and submission endpoints under `/api/cases/{case_id}`. Interactive API documentation is available at `http://localhost:8000/docs`.
+The backend exposes the public Hazel inquiry endpoint at `/api/public/submit-interest`, followed by case, NDA acceptance, Due Diligence (through the compatible `institution-profile` endpoints), Documents, Coverbase intake, Risk Questions, member answer, and submission endpoints under `/api/cases/{case_id}`. Legacy `/due-diligence` endpoints remain available for existing cases but are no longer a separate member-facing step. Interactive API documentation is available at `http://localhost:8000/docs`.
 
 ## Hazel Review clarification boundary
 

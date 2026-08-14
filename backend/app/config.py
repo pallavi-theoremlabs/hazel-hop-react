@@ -26,6 +26,14 @@ class BackendSettings:
     coverbase_base_url: str
     coverbase_api_key: str
     coverbase_questionnaire_id: str
+    rafa_base_url: str
+    rafa_api_key: str
+    rafa_eligibility_min_score: float
+    rafa_provider: str
+    databricks_host: str
+    databricks_client_id: str
+    databricks_client_secret: str
+    databricks_app_url: str
 
 
 settings = BackendSettings(
@@ -33,6 +41,16 @@ settings = BackendSettings(
     coverbase_base_url=os.getenv("COVERBASE_BASE_URL", "").strip().rstrip("/"),
     coverbase_api_key=os.getenv("COVERBASE_API_KEY", "").strip(),
     coverbase_questionnaire_id=os.getenv("COVERBASE_QUESTIONNAIRE_ID", "").strip(),
+    rafa_base_url=os.getenv("RAFA_BASE_URL", "").strip().rstrip("/"),
+    rafa_api_key=os.getenv("RAFA_API_KEY", "").strip(),
+    rafa_eligibility_min_score=float(
+        os.getenv("RAFA_ELIGIBILITY_MIN_SCORE", "1").strip()
+    ),
+    rafa_provider=os.getenv("RAFA_PROVIDER", "onrender").strip().lower(),
+    databricks_host=os.getenv("DATABRICKS_HOST", "").strip().rstrip("/"),
+    databricks_client_id=os.getenv("DATABRICKS_CLIENT_ID", "").strip(),
+    databricks_client_secret=os.getenv("DATABRICKS_CLIENT_SECRET", "").strip(),
+    databricks_app_url=os.getenv("DATABRICKS_APP_URL", "").strip().rstrip("/"),
 )
 
 
@@ -46,3 +64,23 @@ def validate_backend_settings() -> None:
             "COVERBASE_MODE=live requires COVERBASE_API_KEY in "
             f"{BACKEND_ENV_PATH}. Add the key and restart FastAPI."
         )
+    if settings.rafa_eligibility_min_score < 0:
+        raise RuntimeError("RAFA_ELIGIBILITY_MIN_SCORE must be zero or greater.")
+    if settings.rafa_provider not in {"onrender", "databricks"}:
+        raise RuntimeError("RAFA_PROVIDER must be either 'onrender' or 'databricks'.")
+    if settings.rafa_provider == "databricks":
+        missing = [
+            name
+            for name, value in (
+                ("DATABRICKS_HOST", settings.databricks_host),
+                ("DATABRICKS_CLIENT_ID", settings.databricks_client_id),
+                ("DATABRICKS_CLIENT_SECRET", settings.databricks_client_secret),
+                ("DATABRICKS_APP_URL", settings.databricks_app_url),
+            )
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(
+                "RAFA_PROVIDER=databricks requires backend configuration: "
+                + ", ".join(missing)
+            )
