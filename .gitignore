@@ -1,13 +1,4 @@
 .DS_Store
 node_modules/
 dist/
-.venv/
-__pycache__/
-*.py[cod]
-*.db
-backend/uploads/*
-!backend/uploads/.gitkeep
-backend/.env
-frontend/.env
-
-.gstack/
+.env
