@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from 'react-i18next'
 import { NavLink, useLocation, useParams } from 'react-router-dom'
 import DeveloperTestControls from './DeveloperTestControls'
 import { stageIndex } from './ProgressTracker'
@@ -6,20 +7,20 @@ import { stageIndex } from './ProgressTracker'
 const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
 
 const NAV_ITEMS = [
-  { key: 'NDA_PENDING', label: 'NDA', path: 'nda', substeps: ['Agreement', 'Acceptance status'] },
-  { key: 'INSTITUTION_PROFILE', label: 'Institution Profile', path: 'institution-profile' },
-  { key: 'DOCUMENTS', label: 'Documents', path: 'documents', substeps: ['Required document', 'Supporting documents', 'Document repository'] },
-  { key: 'DUE_DILIGENCE', label: 'Due Diligence', path: 'due-diligence', substeps: ['Institution Details', 'Primary Contacts'] },
-  { key: 'RISK_QUESTIONS', label: 'Risk Questions', path: 'risk-questions', substeps: ['Question sections', 'Review & certification'] },
-  { key: 'HAZEL_REVIEW', label: 'Hazel Review', path: 'review' },
+  { key: 'NDA_PENDING', labelKey: 'stages.nda', path: 'nda', substepsKey: 'navigation.ndaSubsteps' },
+  { key: 'INSTITUTION_PROFILE', labelKey: 'stages.dueDiligence', path: 'due-diligence' },
+  { key: 'DOCUMENTS', labelKey: 'stages.documents', path: 'documents', substepsKey: 'navigation.documentSubsteps' },
+  { key: 'RISK_QUESTIONS', labelKey: 'stages.riskQuestions', path: 'risk-questions', substepsKey: 'navigation.riskSubsteps' },
+  { key: 'HAZEL_REVIEW', labelKey: 'stages.hazelReview', path: 'review' },
 ]
 
 const FUTURE_ITEMS = [
-  { label: 'eSign' },
-  { label: 'Account Opening' },
+  { labelKey: 'stages.esign' },
+  { labelKey: 'stages.accountOpening' },
 ]
 
 export default function AppShell({ caseData, refreshCase, children }) {
+  const { t } = useTranslation(['onboarding', 'common'])
   const { caseId } = useParams()
   const { pathname } = useLocation()
   const current = stageIndex(caseData.current_stage)
@@ -38,34 +39,36 @@ export default function AppShell({ caseData, refreshCase, children }) {
         <span className="avatar" aria-label="Test applicant">{(caseData.primary_applicant_email || 'TT').slice(0, 2).toUpperCase()}</span>
       </header>
       <aside className="sidebar">
-        <p className="side-label">Onboarding</p>
+        <p className="side-label">{t('common:navigation.onboarding')}</p>
         <NavLink className={({ isActive }) => `nav nav-state-available ${isActive ? 'active' : ''}`} to={`/case/${caseId}/overview`}>
           <i className="nav-state-icon" aria-hidden="true" />
-          <span>Overview</span>
+          <span>{t('common:navigation.overview')}</span>
         </NavLink>
         {NAV_ITEMS.map((item, index) => {
           const state = navState(index)
           const active = activePath === item.path
           const marker = state === 'completed' ? '✓' : state === 'current' ? '●' : '▣'
+          const label = t(`onboarding:${item.labelKey}`)
+          const substeps = item.substepsKey ? t(`onboarding:${item.substepsKey}`, { returnObjects: true }) : null
           return <div className="stage-nav-group" key={item.key}>
             {state === 'locked' ? (
               <span className={`nav nav-state-${state}`} aria-disabled="true">
-                <i className="nav-state-icon" aria-hidden="true">{marker}</i><span>{item.label}</span><small>Locked</small>
+                <i className="nav-state-icon" aria-hidden="true">{marker}</i><span>{label}</span><small>{t('common:status.locked')}</small>
               </span>
             ) : (
               <NavLink className={`nav nav-state-${state} ${active ? 'active' : ''}`} to={`/case/${caseId}/${item.path}`}>
-                <i className="nav-state-icon" aria-hidden="true">{marker}</i><span>{item.label}</span>{item.substeps && active && <small>⌃</small>}
+                <i className="nav-state-icon" aria-hidden="true">{marker}</i><span>{label}</span>{substeps && active && <small>⌃</small>}
               </NavLink>
             )}
-            {active && item.substeps && <div className="stage-nav-substeps">
-              {item.substeps.map((step) => <span className="stage-nav-substep" key={step}>{step}</span>)}
+            {active && substeps && <div className="stage-nav-substeps">
+              {substeps.map((step) => <span className="stage-nav-substep" key={step}>{step}</span>)}
             </div>}
           </div>
         })}
-        {FUTURE_ITEMS.map((item) => <span className="nav nav-state-locked" aria-disabled="true" key={item.label}>
-          <i className="nav-state-icon" aria-hidden="true">▣</i><span>{item.label}</span><small>Locked</small>
+        {FUTURE_ITEMS.map((item) => <span className="nav nav-state-locked" aria-disabled="true" key={item.labelKey}>
+          <i className="nav-state-icon" aria-hidden="true">▣</i><span>{t(`onboarding:${item.labelKey}`)}</span><small>{t('common:status.locked')}</small>
         </span>)}
-        <div className="side-foot">Stakeholder prototype<br />Synthetic data only</div>
+        <div className="side-foot">{t('common:navigation.prototypeFooter')}<br />{t('common:navigation.syntheticData')}</div>
       </aside>
       <main className="page" id="main-content">
         {DEV_MODE && <DeveloperTestControls caseData={caseData} refreshCase={refreshCase} />}

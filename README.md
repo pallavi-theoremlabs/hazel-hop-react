@@ -76,7 +76,7 @@ NDA_ACCEPTED
 → HAZEL_REVIEW
 ```
 
-The seeded synthetic case starts on NDA. Every transition is persisted in Postgres and guarded in both the React router and FastAPI routes, and each one also appends a row to `hazel.case_decisions` — an append-only record of what stage was requested, what took effect, and when. Profile saves never start Coverbase. The user explicitly starts risk processing only after Institution Profile, required Documents, and Due Diligence are complete.
+The seeded synthetic case starts on NDA. Every transition is persisted in SQLite and guarded in both the React router and FastAPI routes. Profile saves never start Coverbase. The user explicitly starts risk processing only after Institution Profile, required Documents, and Due Diligence are complete.
 
 Coverbase-generated answers remain suggestions, and they live in Coverbase. Hazel does not store risk answers of its own: member edits and confirmations are proxied straight through to Coverbase by `save_risk_answer`. (Earlier revisions of this document described a `risk_answers` table. It existed in the schema but was never read from or written to, and it has been removed.) The member-facing review page omits raw scores, internal weights, private notes, and operator-only reasoning.
 
@@ -84,7 +84,7 @@ Uploaded files are validated for extension and 25 MB size, assigned server-gener
 
 ## API overview
 
-The backend exposes the public Hazel inquiry endpoint at `/api/public/submit-interest`, followed by case, NDA acceptance, Institution Profile, Documents, Due Diligence, Coverbase intake, Risk Questions, member answer, and submission endpoints under `/api/cases/{case_id}`. Interactive API documentation is available at `http://localhost:8000/docs`.
+The backend exposes the public Hazel inquiry endpoint at `/api/public/submit-interest`, followed by case, NDA acceptance, Due Diligence (through the compatible `institution-profile` endpoints), Documents, Coverbase intake, Risk Questions, member answer, and submission endpoints under `/api/cases/{case_id}`. Legacy `/due-diligence` endpoints remain available for existing cases but are no longer a separate member-facing step. Interactive API documentation is available at `http://localhost:8000/docs`.
 
 ## Hazel Review clarification boundary
 

@@ -1,0 +1,45 @@
+{
+  "actions": {
+    "back": "Back",
+    "cancel": "Cancel",
+    "continue": "Continue",
+    "returnToOverview": "Return to Overview",
+    "retry": "Try again",
+    "remove": "Remove",
+    "submit": "Submit",
+    "showAll": "Show all",
+    "clearFilter": "Clear filter"
+  },
+  "status": {
+    "accepted": "Accepted",
+    "actionNeeded": "Action needed",
+    "available": "Available now",
+    "completed": "Completed",
+    "confirmed": "Confirmed",
+    "current": "Current",
+    "locked": "Locked",
+    "loading": "Loading",
+    "optional": "Optional",
+    "processing": "Processing",
+    "required": "Required"
+  },
+  "feedback": {
+    "loadingCase": "Loading onboarding case…",
+    "caseLoadErrorTitle": "We couldn’t load this case.",
+    "genericError": "Something went wrong.",
+    "retry": "Try again"
+  },
+  "save": {
+    "autosaved": "Autosaved just now",
+    "saved": "Saved just now",
+    "unsaved": "Unsaved changes",
+    "saving": "Saving…"
+  },
+  "navigation": {
+    "onboarding": "Onboarding",
+    "overview": "Overview",
+    "lockedHint": "Complete the prior stage to unlock.",
+    "prototypeFooter": "Stakeholder prototype",
+    "syntheticData": "Synthetic data only"
+  }
+}

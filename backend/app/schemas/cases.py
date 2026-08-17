@@ -107,4 +107,4 @@ class RiskQuestionResponseUpdate(BaseModel):
     selected_option_ids: Optional[List[str]] = None
     response_data: Any = None
     comment: Optional[str] = None
-    reviewed: bool = True
+    reviewed: bool

@@ -1,8 +1,8 @@
-"""Hazel-owned fallback schema for the August 4 Institution Profile."""
+"""Hazel-owned fallback schema for the consolidated Due Diligence step."""
 
 HAZEL_INSTITUTION_PROFILE_SCHEMA = {
     "schema_version": "2026-08-04",
-    "title": "Institution Profile",
+    "title": "Due Diligence",
     "description": "Provide additional details about your institution and intended use of the Hazel Network.",
     "sections": [
         {

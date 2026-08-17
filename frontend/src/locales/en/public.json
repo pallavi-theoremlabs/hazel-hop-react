@@ -1,0 +1,65 @@
+{
+  "submitInterest": {
+    "eyebrow": "For regulated institutions",
+    "title": "Express interest",
+    "description": "Send Hazel the core institution and representative details needed to review your inquiry. This does not create a portal account.",
+    "errorTitle": "There is a problem",
+    "submit": "Submit interest",
+    "requiredNote": "Required fields are marked with an asterisk. Local development only—submission creates a synthetic Hazel case.",
+    "reasonLabel": "Reason for interest",
+    "optional": "Optional",
+    "sending": "Sending inquiry…",
+    "completeTitle": "Thank you.",
+    "eligibleStatus": "Eligible for onboarding",
+    "rejectedStatus": "Inquiry received",
+    "eligibleDescription": "Your institution met the temporary RAFA testing threshold and can continue through the local invitation path.",
+    "rejectedDescription": "Your institution did not meet the temporary RAFA testing threshold. A secure onboarding path was not created.",
+    "reference": "Reference {{reference}}",
+    "hazelOnly": "Your Hazel inquiry and institution record have been created. No Coverbase intake was created during Submit Interest.",
+    "devSimulation": "Local development simulation",
+    "devTitle": "Continue the approved test path",
+    "rafaTitle": "RAFA screening eligible",
+    "rafaDescription": "Verified through the Bank Profile API with score {{score}}.",
+    "rafaRejectedTitle": "RAFA screening not eligible",
+    "rafaRejectedDescription": "The Bank Profile API returned score {{score}}, below the temporary testing threshold.",
+    "invitationTitle": "Invitation approved",
+    "invitationDescription": "Mocked locally; the private HOP case starts at NDA.",
+    "rejectedDevTitle": "No secure onboarding path created",
+    "invitationNotCreatedTitle": "Invitation not created",
+    "invitationNotCreatedDescription": "The inquiry remains public and does not advance to NDA.",
+    "openNda": "Open NDA",
+    "fields": {
+      "legalName": { "label": "Legal institution name", "hint": "Use the institution’s complete legal name." },
+      "fdic": { "label": "FDIC certificate number", "hint": "Hazel uses this number to match your institution to authoritative FDIC records." },
+      "website": { "label": "Institution website" },
+      "institutionType": { "label": "Institution type" },
+      "contactName": { "label": "Contact name", "hint": "Enter the person Hazel should contact about this inquiry." },
+      "contactTitle": { "label": "Role / title" },
+      "contactEmail": { "label": "Business email", "hint": "Hazel will send the inquiry response to this address." },
+      "phone": { "label": "Phone" }
+    },
+    "validation": {
+      "required": "Enter the {{field}}.",
+      "fdic": "Enter the FDIC certificate number using digits only.",
+      "website": "Enter a valid institution website.",
+      "email": "Enter a valid business email address.",
+      "verifyFdic": "Verify and select the institution matching this FDIC certificate number."
+    },
+    "lookup": {
+      "action": "Verify FDIC",
+      "checking": "Verifying…",
+      "details": "FDIC {{fdic}} · RSSD {{rssd}}",
+      "notAvailable": "not available",
+      "useMatch": "Use this institution",
+      "confirmed": "Institution selected"
+    },
+    "institutionTypes": [
+      "National bank",
+      "State member bank",
+      "State nonmember bank",
+      "Savings association",
+      "Credit union",
+      "Other"
+    ]
+  }
+}
