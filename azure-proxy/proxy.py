@@ -14,14 +14,21 @@ of which would be enough:
     rejects the OPTIONS, so the real request is never attempted — this breaks
     browser-direct access even when a token is available.
 
-So the token is minted here, server-side, where the secret can live. The browser
-talks only to this origin, which is why there is no CORS anywhere in the system.
+So the token is minted here, server-side, where the secret can live.
+
+The browser talks only to this tier, never to the App. Whether that is same-origin
+depends on how it is deployed: served from one host alongside the SPA it is, and
+no CORS is involved; deployed as its own service — which is what Render does — it
+is not, and FRONTEND_ORIGIN below has to name the SPA's origin so the preflight
+is answered. The App itself still needs no CORS either way, because this hop is
+server-to-server and carries no Origin header.
 
 This mirrors the token handling already in backend/app/services/rafa.py, which
 calls a *different* Databricks App the same way.
 
-Deploy on Azure App Service rather than a Consumption-plan Function: uploads are
-multipart up to 25MB and are streamed through below rather than buffered.
+Runs on any host that can hold a secret and reach the workspace — currently Render.
+Prefer a plan without cold starts: uploads are multipart up to 25MB and are
+streamed through below rather than buffered.
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ import time
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger("uvicorn.error")
@@ -100,6 +108,44 @@ STRIPPED_RESPONSE_HEADERS = {
 }
 
 app = FastAPI(title="Hazel HOP proxy")
+
+# CORS, and the reason it is needed here rather than on the Databricks App.
+#
+# The original design put the SPA and this proxy on one origin, which is why the
+# App itself registers no CORS middleware and does not need to: a server-to-server
+# forward sends no Origin header and triggers no preflight. Deployed as two
+# separate Render services, that assumption no longer holds — the browser calls
+# a different host and sends a preflight, so this tier has to answer it.
+#
+# Explicit origins, never "*": allow_origins=["*"] is rejected by browsers in
+# combination with credentials, and an open policy on a tier holding workspace
+# credentials is worth avoiding regardless.
+#
+# The App is still not reachable from a browser directly — it sits behind the
+# Databricks auth proxy, which rejects the unauthenticated preflight. This makes
+# the *proxy* callable from the SPA, which is the only hop that should be.
+FRONTEND_ORIGINS = [
+    o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()
+]
+if FRONTEND_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=FRONTEND_ORIGINS,
+        # No cookies are involved: the browser authenticates to this tier not at
+        # all, and this tier authenticates to Databricks with its own credential.
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
+    logger.info("[proxy] CORS enabled for %s", FRONTEND_ORIGINS)
+else:
+    # Not fatal: a same-origin deployment genuinely needs no CORS, and refusing to
+    # start would break that topology. Logged because the symptom otherwise shows
+    # up only in a browser console, as a failure that looks like the API is down.
+    logger.warning(
+        "[proxy] FRONTEND_ORIGIN is unset; no CORS headers will be sent. "
+        "Browser calls from a different origin will fail their preflight."
+    )
 
 _token: str | None = None
 _token_expires_at = 0.0
