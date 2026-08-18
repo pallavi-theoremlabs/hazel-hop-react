@@ -1,7 +1,7 @@
 import logging
-from uuid import uuid4
+from uuid import uuid4, uuid5, NAMESPACE_URL
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from psycopg.types.json import Jsonb
 
 from app.db import connection, utc_now
@@ -15,6 +15,22 @@ from app.services.rafa import (
 
 router = APIRouter(prefix="/api/public", tags=["public-onboarding"])
 logger = logging.getLogger("uvicorn.error")
+
+
+def org_id_for_certificate(fdic_certificate: str) -> str:
+    """The organisation that owns everything about one institution.
+
+    Derived rather than allocated, so the same bank inquiring twice lands in the
+    same tenant instead of accumulating one organisation per submission. uuid5 is
+    a pure function of the certificate number, which also means it needs no lookup
+    and cannot race two concurrent first-time inquiries into two different orgs.
+
+    The FDIC certificate is the right key because it is the identity RAFA screens
+    on and the one field this endpoint has already validated as authentic — the
+    legal name is user-supplied text and would let two spellings of one bank become
+    two tenants.
+    """
+    return str(uuid5(NAMESPACE_URL, f"hazel-org:fdic:{fdic_certificate}"))
 
 
 def public_rafa_error(exc: Exception) -> HTTPException:
@@ -73,26 +89,38 @@ async def submit_interest(payload: SubmitInterestCreate):
         "invitation_status": invitation_status,
     }
 
-    with connection() as conn:
-        existing = conn.execute(
-            "SELECT id FROM institutions WHERE fdic_certificate = ?",
-            (bank["fdic_certificate_number"],),
-        ).fetchone()
-        institution_id = (
-            existing["id"]
-            if existing
-            else (
-                f"RSSD-{bank['rssd_id']}"
-                if bank["rssd_id"]
-                else f"FDIC-{bank['fdic_certificate_number']}"
-            )
+    org_id = org_id_for_certificate(bank["fdic_certificate_number"])
+    institution_id = (
+        f"RSSD-{bank['rssd_id']}"
+        if bank["rssd_id"]
+        else f"FDIC-{bank['fdic_certificate_number']}"
+    )
+
+    # The tenant is known before the transaction opens rather than taken from the
+    # request, because this endpoint is what *creates* the tenant — a prospective
+    # member has no organisation to present until it has been screened.
+    with connection(org_id=org_id) as conn:
+        # First, and inside the same transaction as everything below: every tenant
+        # table's org_id DEFAULT resolves to this id and carries a foreign key to
+        # this row, so the organisation has to exist before the first of them.
+        # hazel.organizations is deliberately outside RLS (migration 002), which is
+        # what makes it writable here.
+        conn.execute(
+            """INSERT INTO organizations (id, slug, name)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (id) DO NOTHING""",
+            (
+                org_id,
+                f"fdic-{bank['fdic_certificate_number']}",
+                bank["legal_name"],
+            ),
         )
         conn.execute(
             """INSERT INTO institutions
             (id, legal_name, fdic_certificate, rssd_id, institution_type,
              registration_contact_email, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET legal_name = excluded.legal_name,
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (org_id, id) DO UPDATE SET legal_name = excluded.legal_name,
             fdic_certificate = excluded.fdic_certificate,
             rssd_id = excluded.rssd_id,
             institution_type = excluded.institution_type,
@@ -112,8 +140,8 @@ async def submit_interest(payload: SubmitInterestCreate):
             """INSERT INTO rafa_screenings
             (institution_id, fdic_certificate, rssd_id, rafa_score, rafa_status,
              rating_label, composite_rating, profile_year, profile_quarter, screened_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(institution_id) DO UPDATE SET
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (org_id, institution_id) DO UPDATE SET
             fdic_certificate = excluded.fdic_certificate,
             rssd_id = excluded.rssd_id, rafa_score = excluded.rafa_score,
             rafa_status = excluded.rafa_status,
@@ -139,14 +167,15 @@ async def submit_interest(payload: SubmitInterestCreate):
             """INSERT INTO onboarding_cases
             (id, institution_id, current_stage, review_status, hazel_review_status,
              additional_information_required, created_at, updated_at)
-            VALUES (%s, %s, 'NDA_PENDING', 'Not started', NULL, false, %s, %s)""",
-            (case_id, f"LOCAL-INQUIRY-{suffix}", now, now),
+            VALUES (%s, %s, %s, 'Not started', NULL, false, %s, %s)""",
+            (case_id, institution_id, current_stage, now, now),
         )
         conn.execute(
             """INSERT INTO express_interest_submissions
-            (case_id, legal_name, fdic_certificate_number, institution_type, website,
-             contact_name, contact_title, contact_email, data_json, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (case_id, legal_name, fdic_certificate_number, rssd_id, institution_type,
+             website, headquarters, contact_name, contact_title, contact_email,
+             data_json, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 case_id,
                 bank["legal_name"],
@@ -164,14 +193,21 @@ async def submit_interest(payload: SubmitInterestCreate):
                 now,
             ),
         )
-        conn.execute(
-            "INSERT INTO institution_profiles (case_id, additional_responses_json, updated_at) VALUES (%s, '{}', %s)",
-            (case_id, now),
-        )
-        conn.execute(
-            "INSERT INTO due_diligence (case_id, data_json, updated_at) VALUES (%s, '{}', %s)",
-            (case_id, now),
-        )
+        # Onboarding scaffolding, only for an inquiry that can actually onboard. A
+        # rejected case is terminal — update_stage() refuses to advance it — so
+        # empty profile and due-diligence rows would be permanently unreachable
+        # scaffolding that still shows up in every count of in-flight applications.
+        # The inquiry itself is kept in full: express_interest_submissions and
+        # rafa_screenings above record who applied and why they were turned down.
+        if eligible:
+            conn.execute(
+                "INSERT INTO institution_profiles (case_id, additional_responses_json, updated_at) VALUES (%s, '{}', %s)",
+                (case_id, now),
+            )
+            conn.execute(
+                "INSERT INTO due_diligence (case_id, data_json, updated_at) VALUES (%s, '{}', %s)",
+                (case_id, now),
+            )
 
     logger.info(
         "[Hazel] received Submit Interest inquiry %s for institution %s; "
@@ -182,6 +218,11 @@ async def submit_interest(payload: SubmitInterestCreate):
     )
     return {
         "case_id": case_id,
+        # The tenant this inquiry now belongs to. Returned so the Azure BFF can
+        # bind the authenticated end user to it — every subsequent /api/cases call
+        # sends it back as X-Hazel-Org-Id, and it is the only way the case becomes
+        # reachable again, since RLS scopes every read to it.
+        "org_id": org_id,
         "inquiry_reference": inquiry_reference,
         "institution_id": institution_id,
         "legal_name": bank["legal_name"],

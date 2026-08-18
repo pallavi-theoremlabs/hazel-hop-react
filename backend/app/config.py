@@ -81,6 +81,17 @@ def validate_backend_settings() -> None:
             "COVERBASE_MODE=live requires COVERBASE_API_KEY in "
             f"{_source_hint()}. Add the key and restart."
         )
+    if settings.coverbase_mode == "live" and not settings.coverbase_questionnaire_id:
+        # Checked here rather than left to the call site. create_intake_session
+        # already raises on an empty questionnaire id, but it is reached only once
+        # a bank has accepted the NDA and filled in its profile — so the failure
+        # would land several stages into a real onboarding rather than at boot.
+        # The mock path substitutes a placeholder id and never notices.
+        raise RuntimeError(
+            "COVERBASE_MODE=live requires COVERBASE_QUESTIONNAIRE_ID in "
+            f"{_source_hint()}. Without it, onboarding fails at the Coverbase "
+            "intake stage rather than at startup."
+        )
     if settings.rafa_eligibility_min_score < 0:
         raise RuntimeError("RAFA_ELIGIBILITY_MIN_SCORE must be zero or greater.")
     if settings.rafa_provider not in {"onrender", "databricks"}:

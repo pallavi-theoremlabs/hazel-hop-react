@@ -17,3 +17,6 @@ backend/.env
 frontend/.env
 
 .gstack/
+
+# Local copy of the deployed HAZEL_PROXY_KEY, for test curls. Never committed.
+.hazel_proxy_key

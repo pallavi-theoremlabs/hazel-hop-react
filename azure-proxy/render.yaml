@@ -1,0 +1,40 @@
+# Render service for the backend-for-frontend.
+#
+# This tier exists because a browser cannot call a Databricks App directly: the App
+# is behind the workspace auth proxy, your members are banks with no Databricks
+# identity, a SPA bundle cannot hold the service principal secret, and a CORS
+# preflight is sent without credentials so it is rejected before the real request
+# is attempted. The proxy holds the secret and mints the token server-side.
+#
+# Deploy alongside the existing frontend service. The UI then calls this origin,
+# not the App, so no CORS is involved anywhere.
+
+services:
+  - type: web
+    name: hazel-hop-bff
+    runtime: python
+    rootDir: azure-proxy
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    # Single worker: the OAuth token cache is per-process, so more workers just
+    # mint more tokens. This tier streams rather than computes; it is not the
+    # bottleneck.
+    startCommand: uvicorn proxy:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABRICKS_HOST
+        value: https://dbc-6400d9ac-e0d7.cloud.databricks.com
+      - key: DATABRICKS_APP_URL
+        value: https://hazel-hop-demo-7474650915199601.aws.databricksapps.com
+
+      # sync: false means Render prompts for the value and never stores it in git.
+      # The service principal's credentials — the same one the App runs as.
+      - key: DATABRICKS_CLIENT_ID
+        sync: false
+      - key: DATABRICKS_CLIENT_SECRET
+        sync: false
+
+      # Must match HAZEL_PROXY_KEY in the App's app.yaml exactly. A mismatch shows
+      # up as a uniform 401 from every endpoint rather than as partial breakage.
+      - key: HAZEL_PROXY_KEY
+        sync: false

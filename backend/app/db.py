@@ -20,7 +20,25 @@ from sqlalchemy import create_engine, event
 # injected App variables always win over anything in the file.
 from app import config  # noqa: F401
 from app.lakebase import mint_password, resolve_settings
+from app.tenancy import SYSTEM_SESSION, current_session
 
+# The application role from postgres setup/hazel_schema.sql, and the reason RLS is
+# worth anything here. Every p_tenant policy is written against it, and it is
+# created NOLOGIN NOBYPASSRLS on purpose.
+#
+# Assuming the connection is already subject to those policies is how RLS gets
+# tested into a false pass: the App connects as its own service principal, which
+# owns nothing but is a Databricks identity, and Databricks identities carry
+# rolbypassrls. Without the SET LOCAL ROLE below, every policy in the schema is
+# skipped and every query returns every tenant's rows.
+#
+# LOCAL, so it reverts at commit and cannot leak to the next request that borrows
+# this connection from the pool — the same reasoning as the set_config calls.
+APP_ROLE = "hop_app"
+
+# The ordered onboarding progression. Position is meaningful: update_stage() uses
+# the index to clamp a backwards transition, so this list is a sequence and not
+# merely a set of legal values.
 STAGES = [
     "NDA_PENDING",
     "NDA_ACCEPTED",
@@ -31,15 +49,30 @@ STAGES = [
     "HAZEL_REVIEW",
 ]
 
-# Placeholder tenant. This app has no auth, no session and no user identity, so
-# every request belongs to the same demo organisation. It is a hardcoded constant
-# on purpose — when real tenancy arrives this reads from the request, and until
-# then it should be obvious that it is not wired to anything.
-DEMO_ORG_ID = "00000000-0000-0000-0000-000000000001"
+# Stages that are an outcome rather than a step. A case in one of these is not
+# partway along STAGES, it is finished, so these are deliberately kept out of the
+# list above: giving INQUIRY_REJECTED an index would make it comparable to
+# DOCUMENTS under the clamp, which is meaningless.
+#
+# Written by submit_interest() when RAFA screening rejects an institution. The
+# database CHECK constraint on onboarding_cases.current_stage covers STAGES plus
+# these; keep migration 006 in step with this set.
+TERMINAL_STAGES = frozenset({"INQUIRY_REJECTED"})
 
+ALL_STAGES = frozenset(STAGES) | TERMINAL_STAGES
 
-def current_org_id() -> str:
-    return DEMO_ORG_ID
+# NOTE: the three constants above describe the *application's* stage machine, which
+# does not match ck_case_stage in the final schema:
+#
+#     app     NDA_PENDING NDA_ACCEPTED INSTITUTION_PROFILE DOCUMENTS
+#             DUE_DILIGENCE RISK_QUESTIONS HAZEL_REVIEW INQUIRY_REJECTED
+#     schema  INQUIRY ELIGIBILITY_SCREENING NDA DUE_DILIGENCE
+#             RISK_ASSESSMENT VANTAGE_REVIEW ACCOUNT_OPENING COMPLETED
+#
+# Three application stages collapse onto the schema's DUE_DILIGENCE, so the mapping
+# is lossy in that direction and is an open product decision, not something to
+# settle here. They are left in place because update_stage() and the parked cases
+# router still read them; nothing mounted today writes a stage.
 
 
 def utc_now() -> datetime:
@@ -217,13 +250,17 @@ class _Conn:
 
 
 @contextmanager
-def connection():
-    """A pooled connection inside a transaction, with tenant context established.
+def connection(session: tuple[str | None, str | None, str] | None = None):
+    """A pooled connection inside a transaction, under the schema's session contract.
 
-    The GUC is set with set_config(..., true) rather than `SET LOCAL app.org_id =
-    %s`: SET is a utility statement and Postgres rejects bound parameters in it
-    ("syntax error at or near $1"). The third argument keeps the setting
-    transaction-local, so it cannot leak to the next request that borrows this
+    `session` is (institution_id, user_id, role) and defaults to the one carried by
+    the request being served. It is passed explicitly only by work running outside
+    a request, such as the startup check in init_db().
+
+    The GUCs are set with set_config(..., true) rather than `SET LOCAL hop.x = %s`:
+    SET is a utility statement and Postgres rejects bound parameters in it
+    ("syntax error at or near $1"). The third argument keeps each setting
+    transaction-local, so none can leak to the next request that borrows this
     connection from the pool — which also makes this safe against the endpoint's
     transaction-mode pooler.
 
@@ -233,12 +270,24 @@ def connection():
     are already making, and being transaction-local it is immune to whatever the
     pooler does with server connections between transactions.
     """
+    institution_id, user_id, role = session or current_session()
     with get_engine().connect() as sa_conn:  # rolls back if the block raises
         with sa_conn.begin():
+            # Role first. set_config below is harmless under any role, but the
+            # statements the caller then runs are not, and a SET ROLE after them
+            # would be too late.
+            sa_conn.exec_driver_sql(f"SET LOCAL ROLE {APP_ROLE}")
+            # The three GUCs hazel_schema.sql names as the session contract, plus
+            # search_path, in one round trip. All transaction-local: current_setting
+            # is what hazel.current_institution() and friends read, and the policies
+            # fail closed on NULL, so a request that never set them sees nothing
+            # rather than everything.
             sa_conn.exec_driver_sql(
-                "SELECT set_config('app.org_id', %s, true),"
+                "SELECT set_config('hop.institution_id', %s, true),"
+                "       set_config('hop.user_id', %s, true),"
+                "       set_config('hop.role', %s, true),"
                 "       set_config('search_path', %s, true)",
-                (current_org_id(), "hazel"),
+                (institution_id or "", user_id or "", role, "hazel"),
             )
             yield _Conn(sa_conn)
 
@@ -260,191 +309,33 @@ def init_db() -> None:
     mode, so it is checked here instead of surfacing as a missing-relation error
     on the first request.
     """
+    # The schema in postgres setup/hazel_schema.sql, which is authoritative and
+    # final. Deliberately not the set backend/migrations/ builds — that directory
+    # describes a different data model and is retired; see the note in init_db's
+    # docstring.
+    #
+    # "user" rather than "app_user": the live database predates that rename in
+    # hazel_schema.sql. Asserted as deployed rather than as the file reads, because
+    # this check exists to describe reality, not to argue with it.
     expected = {
-        "onboarding_cases",
-        "institution_profiles",
-        "express_interest_submissions",
-        "documents",
-        "due_diligence",
-        "review_clarifications",
-        "case_decisions",
+        "institution",
+        "rafa",
+        "onboarding_case",
+        "document",
+        "case_stage_transition",
+        "audit_log",
     }
-    with connection() as conn:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS onboarding_cases (
-                id TEXT PRIMARY KEY,
-                institution_id TEXT NOT NULL,
-                current_stage TEXT NOT NULL,
-                nda_accepted_at TEXT,
-                institution_profile_completed_at TEXT,
-                documents_completed_at TEXT,
-                due_diligence_completed_at TEXT,
-                risk_questions_submitted_at TEXT,
-                coverbase_session_id TEXT,
-                coverbase_vendor_id TEXT,
-                coverbase_status TEXT,
-                hazel_review_status TEXT,
-                review_status TEXT NOT NULL DEFAULT 'Not started',
-                additional_information_required INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS institutions (
-                id TEXT PRIMARY KEY,
-                legal_name TEXT NOT NULL,
-                fdic_certificate TEXT NOT NULL UNIQUE,
-                rssd_id TEXT,
-                institution_type TEXT NOT NULL,
-                registration_contact_email TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS rafa_screenings (
-                institution_id TEXT PRIMARY KEY REFERENCES institutions(id) ON DELETE CASCADE,
-                fdic_certificate TEXT NOT NULL,
-                rssd_id TEXT,
-                rafa_score REAL NOT NULL,
-                rafa_status TEXT NOT NULL,
-                rating_label TEXT,
-                composite_rating TEXT,
-                profile_year TEXT,
-                profile_quarter TEXT,
-                screened_at TEXT NOT NULL,
-                CHECK (rafa_status IN ('accepted', 'rejected'))
-            );
-            CREATE TABLE IF NOT EXISTS institution_profiles (
-                case_id TEXT PRIMARY KEY REFERENCES onboarding_cases(id) ON DELETE CASCADE,
-                legal_name TEXT, fdic_certificate_number TEXT, rssd_id TEXT,
-                institution_type TEXT, website TEXT, headquarters TEXT,
-                admission_type TEXT, international_correspondent_relationships TEXT,
-                has_dba TEXT, has_fintech_or_baas_programs TEXT,
-                primary_contact_name TEXT, primary_contact_title TEXT,
-                primary_contact_email TEXT,
-                additional_responses_json TEXT NOT NULL DEFAULT '{}',
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS express_interest_submissions (
-                case_id TEXT PRIMARY KEY REFERENCES onboarding_cases(id) ON DELETE CASCADE,
-                legal_name TEXT, fdic_certificate_number TEXT, rssd_id TEXT,
-                institution_type TEXT, website TEXT, headquarters TEXT,
-                contact_name TEXT, contact_title TEXT, contact_email TEXT,
-                data_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS documents (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                case_id TEXT NOT NULL REFERENCES onboarding_cases(id) ON DELETE CASCADE,
-                document_type TEXT NOT NULL, original_name TEXT NOT NULL,
-                stored_name TEXT NOT NULL, size_bytes INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                coverbase_document_id TEXT,
-                coverbase_sync_status TEXT NOT NULL DEFAULT 'not_started',
-                coverbase_synced_at TEXT,
-                coverbase_sync_error TEXT,
-                coverbase_sync_details_json TEXT NOT NULL DEFAULT '{}',
-                file_sha256 TEXT
-            );
-            CREATE TABLE IF NOT EXISTS due_diligence (
-                case_id TEXT PRIMARY KEY REFERENCES onboarding_cases(id) ON DELETE CASCADE,
-                data_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS risk_answers (
-                case_id TEXT NOT NULL REFERENCES onboarding_cases(id) ON DELETE CASCADE,
-                question_id TEXT NOT NULL, answer TEXT NOT NULL,
-                confirmed INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
-                PRIMARY KEY (case_id, question_id)
-            );
-            CREATE TABLE IF NOT EXISTS review_clarifications (
-                id TEXT PRIMARY KEY,
-                case_id TEXT NOT NULL REFERENCES onboarding_cases(id) ON DELETE CASCADE,
-                source TEXT NOT NULL,
-                source_reference_id TEXT,
-                requested_by TEXT NOT NULL,
-                request_text TEXT NOT NULL,
-                request_type TEXT NOT NULL DEFAULT 'additional_information',
-                question_id TEXT,
-                requested_at TEXT NOT NULL,
-                due_at TEXT,
-                status TEXT NOT NULL,
-                member_response TEXT NOT NULL DEFAULT '',
-                submitted_at TEXT,
-                document_required INTEGER NOT NULL DEFAULT 0,
-                document_label TEXT,
-                replacement_of_hazel_document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
-                uploaded_hazel_document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
-                coverbase_sync_status TEXT NOT NULL DEFAULT 'not_started',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                CHECK (status IN ('open', 'draft', 'submitted', 'resolved'))
-            );
-            CREATE INDEX IF NOT EXISTS idx_review_clarifications_case
-            ON review_clarifications(case_id, requested_at DESC);
-            """
-        )
-        profile_columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(institution_profiles)").fetchall()
-        }
-        if "additional_responses_json" not in profile_columns:
-            conn.execute(
-                "ALTER TABLE institution_profiles ADD COLUMN additional_responses_json TEXT NOT NULL DEFAULT '{}'"
-            )
-        case_columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(onboarding_cases)").fetchall()
-        }
-        if "hazel_review_status" not in case_columns:
-            conn.execute("ALTER TABLE onboarding_cases ADD COLUMN hazel_review_status TEXT")
-            conn.execute(
-                "UPDATE onboarding_cases SET hazel_review_status = review_status "
-                "WHERE review_status NOT IN ('', 'Not started')"
-            )
-        document_columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(documents)").fetchall()
-        }
-        document_migrations = {
-            "coverbase_document_id": "TEXT",
-            "coverbase_sync_status": "TEXT NOT NULL DEFAULT 'not_started'",
-            "coverbase_synced_at": "TEXT",
-            "coverbase_sync_error": "TEXT",
-            "coverbase_sync_details_json": "TEXT NOT NULL DEFAULT '{}'",
-            "file_sha256": "TEXT",
-        }
-        for column, definition in document_migrations.items():
-            if column not in document_columns:
-                conn.execute(f"ALTER TABLE documents ADD COLUMN {column} {definition}")
-        now = utc_now()
-        conn.execute(
-            """INSERT OR IGNORE INTO onboarding_cases
-            (id, institution_id, current_stage, review_status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)""",
-            ("HAZEL-TEST-001", "NORTHSTAR-001", "NDA_PENDING", "Not started", now, now),
-        )
-        conn.execute(
-            """INSERT OR IGNORE INTO institution_profiles
-            (case_id, legal_name, fdic_certificate_number, rssd_id, institution_type,
-             website, headquarters, admission_type,
-             international_correspondent_relationships, has_dba,
-             has_fintech_or_baas_programs, primary_contact_name,
-             primary_contact_title, primary_contact_email, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("HAZEL-TEST-001", "Northstar Community Bank, N.A.", "12001", "",
-             "National bank", "https://northstar.example", "Charlotte, North Carolina",
-             "", "", "", "", "Jamie Chen", "Chief Operating Officer",
-             "jamie.chen@northstar.example", now),
-        )
-        conn.execute(
-            "INSERT OR IGNORE INTO due_diligence (case_id, data_json, updated_at) VALUES (?, ?, ?)",
-            ("HAZEL-TEST-001", json.dumps({"institutionWebsite": "https://northstar.example", "headquarters": "Charlotte, North Carolina"}), now),
-        )
-        conn.execute(
-            """INSERT OR IGNORE INTO express_interest_submissions
-            (case_id, legal_name, fdic_certificate_number, rssd_id, institution_type,
-             website, headquarters, contact_name, contact_title, contact_email,
-             data_json, updated_at)
-            SELECT case_id, legal_name, fdic_certificate_number, rssd_id,
-                   institution_type, website, headquarters, primary_contact_name,
-                   primary_contact_title, primary_contact_email, '{}', updated_at
-            FROM institution_profiles WHERE case_id = ?""",
-            ("HAZEL-TEST-001",),
-        )
+
+    # The user table is spelled differently depending on when the schema was
+    # applied. hazel_schema.sql calls it app_user, with a comment explaining that
+    # bare `user` is a reserved word needing permanent quoting; the database this
+    # first deployed against predates that rename and still has `user`.
+    #
+    # Either satisfies this check, deliberately. Requiring one name would make a
+    # correctly-applied schema fail in one workspace or the other, and this
+    # assertion exists to catch a *missing* schema, not to arbitrate a rename.
+    user_table_names = {"app_user", "user"}
+    with connection(session=SYSTEM_SESSION) as conn:
         present = {
             row["tablename"]
             for row in conn.execute(
@@ -452,20 +343,29 @@ def init_db() -> None:
             ).fetchall()
         }
         missing = expected - present
+        if not (user_table_names & present):
+            missing = missing | {"app_user"}
         if missing:
             raise RuntimeError(
                 f"Lakebase schema is not current; missing tables: {sorted(missing)}. "
-                "Run: python backend/migrate.py"
+                "Apply backend/postgres setup/hazel_schema.sql."
             )
 
-        # An unset or empty GUC yields zero rows rather than an error, which is the
-        # right failure direction but is silent. Prove the round-trip at startup so
-        # a misconfigured tenant context is loud instead of looking like empty data.
-        got = conn.execute("SELECT current_setting('app.org_id', true)").fetchone()
-        if not got or got["current_setting"] != current_org_id():
+        # Prove the role took effect. This is the check that matters most, because
+        # its failure mode is silent: connected as a Databricks identity without it,
+        # every p_tenant policy is bypassed and every query returns every
+        # institution's rows, which looks like working software.
+        got = conn.execute("SELECT current_user, hazel.is_system() AS sys").fetchone()
+        if got["current_user"] != APP_ROLE:
             raise RuntimeError(
-                "app.org_id did not round-trip; every query would silently return "
-                "zero rows. Check set_config in connection()."
+                f"SET LOCAL ROLE did not take effect: connected as "
+                f"{got['current_user']}, expected {APP_ROLE}. RLS would be bypassed "
+                f"entirely. Grant it with: GRANT {APP_ROLE} TO \"<sp-client-id>\";"
+            )
+        if not got["sys"]:
+            raise RuntimeError(
+                "hop.role did not round-trip; the session contract from "
+                "hazel_schema.sql is not established. Check set_config in connection()."
             )
 
 
@@ -500,6 +400,16 @@ def update_stage(conn, case_id: str, stage: str, **fields):
         (case_id,),
     ).fetchone()
     from_stage = row["current_stage"] if row else None
+
+    # A rejected inquiry has left the progression, so there is no index to compare
+    # and nothing to clamp to. Checked before the index lookup below, which would
+    # otherwise raise a bare ValueError from STAGES.index() naming neither the case
+    # nor why it has no position.
+    if from_stage in TERMINAL_STAGES:
+        raise ValueError(
+            f"Case {case_id} is {from_stage}, which is terminal; it cannot advance "
+            f"to {stage}."
+        )
 
     effective_stage = stage
     if from_stage and STAGES.index(from_stage) > STAGES.index(stage):

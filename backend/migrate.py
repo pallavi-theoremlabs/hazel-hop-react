@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS hazel.schema_migrations (
 );
 """
 
+# Every tenant-scoped table: each must exist, be ENABLE+FORCE row level security,
+# and carry a nullif-guarded org_isolation policy. hazel.organizations is
+# deliberately absent — it is the tenant registry itself and is outside RLS by
+# design (see 002_rls.sql).
 EXPECTED_TABLES = {
     "onboarding_cases",
     "institution_profiles",
@@ -51,6 +55,8 @@ EXPECTED_TABLES = {
     "due_diligence",
     "review_clarifications",
     "case_decisions",
+    "institutions",
+    "rafa_screenings",
 }
 
 
@@ -143,7 +149,10 @@ def cmd_verify(conn: psycopg.Connection) -> int:
         present = EXPECTED_TABLES & tables
         if present != EXPECTED_TABLES:
             failures.append(f"missing tables: {sorted(EXPECTED_TABLES - tables)}")
-        print(f"  seven tables present ......... {len(present)}/7")
+        # Counted from the set rather than written as a literal. The previous "/7"
+        # was correct until 005 added two tables, and a hardcoded total is a second
+        # place to forget.
+        print(f"  tenant tables present ........ {len(present)}/{len(EXPECTED_TABLES)}")
 
         if "risk_answers" in tables:
             failures.append("risk_answers still exists")
@@ -175,7 +184,10 @@ def cmd_verify(conn: psycopg.Connection) -> int:
         )
         rows = cur.fetchall()
         if len(rows) != len(EXPECTED_TABLES):
-            failures.append(f"expected 7 org_isolation policies, found {len(rows)}")
+            failures.append(
+                f"expected {len(EXPECTED_TABLES)} org_isolation policies, "
+                f"found {len(rows)}"
+            )
         for name, qual, with_check in rows:
             if with_check is None:
                 failures.append(f"{name}: policy has no WITH CHECK")

@@ -25,19 +25,83 @@ command:
 env:
   # Coverbase. COVERBASE_BASE_URL is required even in mock mode — config.py
   # treats a missing value as fatal regardless of mode.
+  #
+  # mock, deliberately. No route mounted today touches Coverbase — main.py serves
+  # /api/health and the public router, and the RAFA lookup is a plain HTTP call —
+  # so `live` bought nothing and cost a startup dependency:
+  #
+  #   RuntimeError: COVERBASE_MODE=live requires COVERBASE_API_KEY in the
+  #   environment (app.yaml env:). Add the key and restart.
+  #
+  # which is validate_backend_settings() working as intended, on a key this
+  # deployment has no use for. Switch back to "live" when the Coverbase-backed
+  # routes are ported, and attach the coverbase-api-key secret resource then.
   - name: "COVERBASE_MODE"
     value: "mock"
   - name: "COVERBASE_BASE_URL"
     value: "https://api.coverbase.app"
+  # Both unused while COVERBASE_MODE=mock, and both required the moment it is
+  # "live" — validate_backend_settings() rejects an empty value for either.
+  #
+  # COVERBASE_API_KEY is commented out rather than left pointing at a resource:
+  # valueFrom names an app resource, and referencing one that is not attached is a
+  # silent empty string, which is exactly the failure above wearing a disguise.
+  # Attach the secret resource first, then uncomment.
   - name: "COVERBASE_QUESTIONNAIRE_ID"
     value: ""
+  # - name: "COVERBASE_API_KEY"
+  #   valueFrom: "coverbase-api-key"
 
-  # Unity Catalog Volume, reached through the SDK Files API — Apps do not mount
-  # /Volumes, so this is a path in the Volume namespace, not on the filesystem.
-  # Named and write-probed at startup by probe_storage(); the app service
-  # principal needs READ VOLUME and WRITE VOLUME plus USE CATALOG / USE SCHEMA.
+  # RAFA / Bank Profile lookup, used by both /api/public routes. Absent entirely
+  # until now, which meant settings.rafa_base_url and rafa_api_key were empty and
+  # every lookup raised RafaProviderUnavailable -> 503, regardless of provider.
+  #
+  # onrender, not databricks: RAFA_PROVIDER=databricks additionally requires
+  # DATABRICKS_HOST, DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET and
+  # DATABRICKS_APP_URL (config.py:88-103), and points at a *different* Databricks
+  # App. Switch the two together or startup validation fails by name.
+  - name: "RAFA_PROVIDER"
+    value: "onrender"
+  - name: "RAFA_BASE_URL"
+    value: "https://bank-profile-proxy.onrender.com"
+  - name: "RAFA_API_KEY"
+    valueFrom: "rafa-api-key"
+
+  # Screening threshold, and the direction is the opposite of what the name
+  # suggests. RAFA composite_score is CAMELS-style: 1 is strongest, 5 is weakest.
+  # normalize_bank() accepts on `score >= minimum`, so RAISING this value accepts
+  # WEAKER banks and rejects the strong ones.
+  #
+  # Measured against the live feed, not reasoned about:
+  #
+  #     value 3  ->  JPMorgan Chase (1.85), Bank of America (1.95),
+  #                  Ally (1.95)  ... all REJECTED
+  #     value 1  ->  all accepted
+  #
+  # .env.example carries 3, which would have declined every real applicant. 1 is
+  # set here so screening passes while the flow is being proven end to end. This is
+  # a placeholder for a policy decision, not the policy: if the intent is "reject
+  # weaker than a 3 rating", the comparison in rafa.py has to be inverted first.
+  - name: "RAFA_ELIGIBILITY_MIN_SCORE"
+    value: "1"
+
+  # Shared secret proving a request came from the Azure backend-for-frontend.
+  # Every /api route requires it; app/tenancy.py refuses all traffic with 503 when
+  # it is unset, rather than defaulting open. The same value goes in the Azure
+  # proxy's HAZEL_PROXY_KEY. Rotate by updating the secret and the proxy together.
+  - name: "HAZEL_PROXY_KEY"
+    valueFrom: "hazel-proxy-key"
+
+  # A container-local path, not a Volume, and only correct while this deployment
+  # serves no route that stores a document — uploads live in the parked cases
+  # router. The trial workspace has no `hazel` catalog, so the Volume path would
+  # fail probe_storage() at startup over storage nothing is using.
+  #
+  # Ephemeral: the container filesystem does not survive a restart. Restore the
+  # /Volumes/... path, and the READ VOLUME / WRITE VOLUME grants, before the
+  # documents router is re-mounted.
   - name: "UPLOAD_DIR"
-    value: "/Volumes/hazel/onboarding/uploads"
+    value: "/tmp/hazel-uploads"
 
   - name: "HAZEL_DEV_MODE"
     value: "false"
@@ -55,7 +119,7 @@ env:
   # generate_database_credential(endpoint=...), so it is copied whole from the
   # UI and never assembled from parts here. Confirmed 2026-08-12.
   - name: "ENDPOINT_NAME"
-    value: "projects/hazel-hop-lakebase/branches/production/endpoints/primary"
+    value: "projects/hazel-api/branches/production/endpoints/primary"
 
 # Deliberately absent: PGHOST, PGPORT, PGDATABASE, PGUSER and PGSSLMODE. Those
 # five are injected by the attached Lakebase project resource and are read from
@@ -64,6 +128,13 @@ env:
 # resource is not attached, resolve_settings() says which are missing by name —
 # which is the failure we want.
 #
-# Also absent: FRONTEND_ORIGIN. The React build is served by this same process
-# from frontend/dist, so requests are same-origin and the CORS middleware is not
-# in the path.
+# Also absent: FRONTEND_ORIGIN, and now for a different reason than it used to be.
+# This process no longer serves the React build at all — the UI is hosted on Azure
+# and reaches this API through a backend-for-frontend proxy. That hop is
+# server-to-server, so it sends no Origin header and triggers no preflight, and
+# main.py registers no CORS middleware for the variable to configure.
+#
+# Browser-direct access is not a topology this can support: a Databricks App is
+# behind the workspace auth proxy, and a CORS preflight is sent without
+# credentials, so it is rejected before the real request is attempted. See
+# app/tenancy.py.

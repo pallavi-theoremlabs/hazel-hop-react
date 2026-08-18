@@ -1,25 +1,19 @@
 import logging
-import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 
-from app.config import BACKEND_DIR, settings, validate_backend_settings
+from app.config import settings, validate_backend_settings
 from app.db import connection, credential_status, init_db
 from app.lakebase import assert_sdk_capabilities, sdk_version
 from app.routers.cases import router as cases_router
 from app.routers.dev import router as dev_router
 from app.routers.public import router as public_router
 from app.storage import probe_storage, storage
+from app.tenancy import SYSTEM_SESSION, require_proxy, require_tenant  # noqa: F401
 
 logger = logging.getLogger("uvicorn.error")
-
-FRONTEND_DIST = BACKEND_DIR.parent / "frontend" / "dist"
-INDEX_HTML = FRONTEND_DIST / "index.html"
 
 
 @asynccontextmanager
@@ -36,16 +30,38 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Hazel HOP API", version="0.1.0", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.include_router(cases_router)
-app.include_router(dev_router)
-app.include_router(public_router)
+
+# No CORS middleware, deliberately.
+#
+# The React UI is served from Azure and never calls this API from the browser. It
+# cannot: a Databricks App is behind the workspace auth proxy, and a CORS preflight
+# is sent without credentials, so it is rejected before the real request is ever
+# attempted. An Azure backend-for-frontend forwards /api/* instead, which is a
+# server-to-server call with no Origin header and no preflight.
+#
+# So CORSMiddleware would not be in the request path even if it were configured,
+# and configuring it anyway would suggest browser-direct access is a supported
+# topology when it is not. See app/tenancy.py.
+
+# Only the public router is mounted.
+#
+# postgres setup/hazel_schema.sql is the final schema, and it has no
+# institution_profiles, express_interest_submissions, due_diligence or
+# review_clarifications. Every route in cases_router and dev_router queries at
+# least one of them, so mounting either would publish 46 endpoints that answer 500
+# with an UndefinedTable — failures that read like bugs in this service rather than
+# like work that has not been done yet. They are re-mounted as each is ported.
+#
+# What survives is the lookup that needs no database at all:
+#
+#     GET /api/public/banks/fdic/{cert}   ->  RAFA over HTTP  ->  JSON
+#
+# which is the end-to-end path the UI's lookup button exercises. Its neighbour
+# POST /api/public/submit-interest does write to the missing tables and will fail;
+# that is expected and is the next thing to port.
+app.include_router(public_router, dependencies=[Depends(require_proxy)])
+
+_PARKED = (cases_router, dev_router)  # noqa: F841 — named so the imports stay honest
 
 
 @app.get("/api/health")
@@ -59,7 +75,9 @@ def health():
     """
     database = {"reachable": True}
     try:
-        with connection() as conn:
+        # SYSTEM: /api/health is intentionally outside the tenancy dependencies, so
+        # there is no request session to inherit, and it only ever runs SELECT 1.
+        with connection(session=SYSTEM_SESSION) as conn:
             conn.execute("SELECT 1")
     except Exception as exc:  # surfaced deliberately; this is the diagnostic path
         database = {"reachable": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -79,45 +97,19 @@ def health():
 
 
 # ---------------------------------------------------------------------------
-# Static frontend
+# No static frontend
 # ---------------------------------------------------------------------------
 #
-# Registered after the API routers so it cannot take precedence over them.
+# This process used to serve frontend/dist as well, behind a catch-all that
+# returned index.html for client-side routes. The UI is hosted on Azure now, so
+# that block is gone rather than left in place as a fallback.
 #
-# StaticFiles(html=True) is deliberately NOT used as the whole answer: it serves
-# index.html for *directory* requests only, so a deep link such as
-# /case/HAZEL-TEST-001/documents has no matching file on disk and 404s. Client-side
-# routing needs an explicit catch-all instead.
+# It was not harmless to keep. The catch-all matched "/{full_path:path}", so the
+# App would answer every unrouted path with whatever copy of the UI happened to be
+# committed at deploy time — a second, silently stale frontend on a URL nobody
+# intends to visit, diverging from Azure the moment either side ships. Without it,
+# an unmatched path gets FastAPI's own 404, which is the correct answer from an API.
 #
-# The catch-all must also refuse /api/* itself. Route ordering alone is not enough:
-# an unmatched /api/nonexistent falls past every router and would otherwise be
-# answered with index.html — an API client would receive 200 and a page of HTML
-# instead of a 404.
-
-if INDEX_HTML.is_file():
-    assets_dir = FRONTEND_DIST / "assets"
-    if assets_dir.is_dir():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
-    @app.get("/{full_path:path}")
-    def serve_spa(full_path: str):
-        if full_path == "api" or full_path.startswith("api/"):
-            raise HTTPException(404, "Not found")
-
-        if full_path:
-            candidate = (FRONTEND_DIST / full_path).resolve()
-            # Containment check: full_path is attacker-controlled and may contain
-            # traversal segments, so a resolved path outside dist/ is refused
-            # rather than served.
-            if candidate.is_file() and candidate.is_relative_to(FRONTEND_DIST.resolve()):
-                return FileResponse(candidate)
-
-        return FileResponse(INDEX_HTML)
-
-    logger.info("[Hazel] serving frontend from %s", FRONTEND_DIST)
-else:
-    logger.warning(
-        "[Hazel] no frontend build at %s; API-only. Run `npm run build` in frontend/ "
-        "and commit frontend/dist/ before deploying.",
-        FRONTEND_DIST,
-    )
+# Retiring this also retires the reason frontend/dist had to be committed at all
+# (see .gitignore) — Databricks Apps does not run `npm run build`, but nothing here
+# needs the build any more.

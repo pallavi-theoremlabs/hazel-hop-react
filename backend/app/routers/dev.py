@@ -23,6 +23,19 @@ def require_synthetic_case_id(case_id: str) -> None:
 
 
 def require_dev_mode() -> None:
+    """Refuse the whole router unless HAZEL_DEV_MODE is on.
+
+    Called by every handler here, which it did not used to be: create_case and
+    reset_case were ungated, and reset_case deletes a case's documents and rewinds
+    its stage. That was survivable while the only way to reach this API was through
+    the Databricks auth proxy with a workspace identity. It is not survivable now
+    that an Azure BFF forwards /api/* on behalf of unauthenticated members, so the
+    gate is applied uniformly here rather than relying on the proxy's route
+    allowlist as the only defence.
+
+    404 rather than 403: with dev mode off these endpoints do not exist, and saying
+    "forbidden" would confirm they are there to be found.
+    """
     if not DEV_MODE_ENABLED:
         raise HTTPException(404, "Not found")
 
@@ -44,6 +57,7 @@ def case_payload(conn, case_id: str):
 
 @router.post("/create-case", status_code=201)
 def create_case(payload: DevCaseCreate):
+    require_dev_mode()
     require_synthetic_case_id(payload.case_id)
     now = utc_now()
     with connection() as conn:
@@ -87,6 +101,7 @@ def create_case(payload: DevCaseCreate):
 
 @router.post("/reset-case/{case_id}")
 def reset_case(case_id: str):
+    require_dev_mode()
     require_synthetic_case_id(case_id)
     with connection() as conn:
         case = require_case(conn, case_id)

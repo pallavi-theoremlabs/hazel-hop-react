@@ -47,16 +47,19 @@ class SubmitInterestRafaTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["eligible"])
         self.assertEqual(result["current_stage"], "NDA_PENDING")
         self.assertIsNone(result["coverbase_session_id"])
-        with connection() as conn:
+        # org_id from the result, not the ambient request tenant: submit_interest
+        # provisions the organisation, and RLS scopes these reads to it. Under the
+        # wrong org every SELECT below returns None rather than failing.
+        with connection(org_id=result["org_id"]) as conn:
             case = conn.execute(
-                "SELECT * FROM onboarding_cases WHERE id = ?", (result["case_id"],)
+                "SELECT * FROM onboarding_cases WHERE id = %s", (result["case_id"],)
             ).fetchone()
             inquiry = conn.execute(
-                "SELECT * FROM express_interest_submissions WHERE case_id = ?",
+                "SELECT * FROM express_interest_submissions WHERE case_id = %s",
                 (result["case_id"],),
             ).fetchone()
             screening = conn.execute(
-                "SELECT * FROM rafa_screenings WHERE institution_id = ?",
+                "SELECT * FROM rafa_screenings WHERE institution_id = %s",
                 (result["institution_id"],),
             ).fetchone()
         self.assertEqual(case["current_stage"], "NDA_PENDING")
@@ -71,12 +74,12 @@ class SubmitInterestRafaTests(unittest.IsolatedAsyncioTestCase):
             result = await public.submit_interest(submission("20001"))
         self.assertFalse(result["eligible"])
         self.assertIsNone(result["next_path"])
-        with connection() as conn:
+        with connection(org_id=result["org_id"]) as conn:
             case = conn.execute(
-                "SELECT * FROM onboarding_cases WHERE id = ?", (result["case_id"],)
+                "SELECT * FROM onboarding_cases WHERE id = %s", (result["case_id"],)
             ).fetchone()
             profile_row = conn.execute(
-                "SELECT * FROM institution_profiles WHERE case_id = ?",
+                "SELECT * FROM institution_profiles WHERE case_id = %s",
                 (result["case_id"],),
             ).fetchone()
         self.assertEqual(case["current_stage"], "INQUIRY_REJECTED")
