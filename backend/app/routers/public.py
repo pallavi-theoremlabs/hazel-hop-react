@@ -31,7 +31,7 @@ def public_rafa_error(exc: Exception) -> HTTPException:
     )
 
 
-@router.get("/banks/fdic/{fdic_cert_number}")
+@router.get("/banks/{fdic_cert_number}")
 async def lookup_bank_by_fdic(fdic_cert_number: str):
     if not fdic_cert_number.isdigit() or len(fdic_cert_number) > 10:
         raise HTTPException(
