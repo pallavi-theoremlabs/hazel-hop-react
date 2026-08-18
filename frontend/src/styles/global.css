@@ -475,10 +475,6 @@ textarea.input { min-height: 105px; resize: vertical; }
 .public-interest .error-summary ul { margin: 0; padding-left: 20px; }
 .public-interest .error-summary a { color: var(--danger); font-weight: 700; }
 .public-interest .submission-note { font-size: 13px; color: var(--muted); line-height: 1.5; margin-top: 18px; }
-.public-interest .review-list { border-top: 1px solid var(--line); margin: 24px 0 0; padding: 0; }
-.public-interest .review-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--line); }
-.public-interest .review-row dt { font-size: 12px; font-weight: 750; color: var(--muted); margin-bottom: 5px; }
-.public-interest .review-row dd { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
 .public-interest > .auth-card > .status { margin: 0 0 16px; }
 .public-interest .local-dev-simulation { margin-top: 24px; border: 1px dashed var(--info); border-radius: 13px; background: #f4f8fc; padding: 18px; }
 .public-interest .local-dev-simulation h2 { margin: 0; color: var(--plum); font: 600 22px/1.2 var(--serif); }
