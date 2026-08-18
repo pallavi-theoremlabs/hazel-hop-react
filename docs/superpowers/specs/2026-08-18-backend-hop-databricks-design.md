@@ -122,6 +122,19 @@ backend's own database connectivity.
 
 ## Deployment prerequisites (user-side, outside this repo's code)
 
+0. **Workspace is Databricks Free Edition** (confirmed by user; formerly "Community Edition", retired
+   2025). This has real constraints worth knowing before proceeding:
+   - **Apps auto-stop after 24 hours** of being started/updated/redeployed, then need a manual restart —
+     this backend will not stay up indefinitely unattended.
+   - **Outbound internet access is restricted to a limited set of trusted domains** unless the account
+     completes **LinkedIn verification**, which unlocks outbound internet access. Without it, the
+     backend's calls to `bank-profile-proxy.onrender.com` (RAFA) and `api.coverbase.app` (Coverbase) may
+     be blocked outright. **Action: complete LinkedIn verification on this Databricks account before
+     creating the app**, or confirm outbound access is already unlocked.
+   - Up to 3 Databricks Apps per account; one Lakebase project per account (scale-to-zero compute — first
+     query after idle may have brief cold-start latency).
+   - Source: [Free Edition limitations](https://docs.databricks.com/aws/en/getting-started/free-edition-limitations),
+     fetched 2026-08-18.
 1. Create the Databricks App (empty, so it's assigned a service principal / `DATABRICKS_CLIENT_ID`).
 2. From the Lakebase project's **Connect** modal (Parameters only), get `PGHOST` and confirm
    `PGDATABASE`.
