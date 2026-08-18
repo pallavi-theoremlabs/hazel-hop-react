@@ -48,7 +48,15 @@ def public_rafa_error(exc: Exception) -> HTTPException:
     )
 
 
-@router.get("/banks/fdic/{fdic_cert_number}")
+# /banks/{cert} rather than /banks/fdic/{cert}. The FDIC certificate is the only
+# identifier this endpoint has ever accepted, so the extra segment named a
+# distinction that does not exist yet.
+#
+# The cost is worth stating: this shape claims the whole /banks/{x} space. A later
+# lookup by RSSD id or by name cannot be added as /banks/{rssd} — it would be an
+# ambiguous route — and would need /banks/rssd/{id} alongside a now-inconsistent
+# /banks/{cert}. Revisit this before adding a second lookup key.
+@router.get("/banks/{fdic_cert_number}")
 async def lookup_bank_by_fdic(fdic_cert_number: str):
     if not fdic_cert_number.isdigit() or len(fdic_cert_number) > 10:
         raise HTTPException(
