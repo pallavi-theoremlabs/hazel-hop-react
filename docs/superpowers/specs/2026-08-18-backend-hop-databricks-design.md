@@ -14,15 +14,28 @@ Host the Hazel HOP FastAPI backend as a Databricks App, connected to:
 
 ## Repo structure
 
-New standalone GitHub repo (`Backend-Hop`, mirroring `Frontend-Hop`): the `backend/` folder from
-`pallavi-theoremlabs/hazel-hop-react`'s `main` branch, flattened to repo root, fresh git history —
-disconnected from `hazel-hop-react`. Local working copy: this directory.
+**Superseded (2026-08-18):** originally planned as a standalone repo mirroring `Frontend-Hop`. After
+back-and-forth, landed instead on a branch: `Backend_Hop`, pushed to the existing
+`pallavi-theoremlabs/hazel-hop-react` repo, sitting independently alongside `main` (disconnected git
+history — pushed from this directory's own local history, not derived from `main` via a flatten commit
+the way `frontend-deployment` was built). Content: the `backend/` folder from `hazel-hop-react`'s `main`,
+flattened to repo root. Local working copy: this directory, remote `origin` → `hazel-hop-react.git`.
+The Databricks App (`backendhop`) is Git-linked directly to this branch.
 
 ## Databricks App packaging
 
+**Superseded finding (2026-08-18, after the app already existed):** the app itself already provides
+`DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID`, `DATABRICKS_CLIENT_SECRET`, and `DATABRICKS_APP_PORT` as
+default env vars automatically (per
+[Databricks Apps environment](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/system-env)) —
+no need to manually copy the client ID into `app.yaml` at all. And Databricks Apps' **resources** feature
+(attach via UI, reference via `valueFrom` in `app.yaml`) replaces the manual SQL grant and manual UC
+Volume permission steps from the original draft of this doc — see **Deployment prerequisites** below for
+the corrected, much shorter list.
+
 - `app.yaml` at repo root:
   ```yaml
-  command: ['uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000']
+  command: ['uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '$DATABRICKS_APP_PORT']
   env:
     - name: FRONTEND_ORIGIN
       value: 'https://frontend-hop.onrender.com'
@@ -35,14 +48,13 @@ disconnected from `hazel-hop-react`. Local working copy: this directory.
     - name: PGSSLMODE
       value: 'require'
     - name: PGHOST
-      value: '<TODO: from Lakebase Connect modal, Parameters only>'
-    - name: PGUSER
-      value: '<TODO: this app''s own DATABRICKS_CLIENT_ID, from the app's Environment tab after creation>'
+      value: '<TODO: from Lakebase Connect modal, Parameters only — the one value with no resource shortcut>'
     - name: ENDPOINT_NAME
-      value: '<TODO: projects/<project-id>/branches/<branch-id>/endpoints/<endpoint-id>, from Lakebase Computes tab>'
+      valueFrom: postgres   # resolves to the Lakebase endpoint path, once the Database resource is attached
   ```
-  The three `TODO` values cannot exist until the Databricks App itself is created (chicken-and-egg: the
-  app's service principal client ID is assigned at creation time). See **Deployment prerequisites** below.
+  `PGUSER` is not set in `app.yaml` at all — the code reads it directly from the auto-provided
+  `DATABRICKS_CLIENT_ID` (see Data layer below), since that's exactly the value Databricks uses as the
+  Postgres role name when the Database resource is attached.
 
 - `app/config.py`: currently `raise RuntimeError` if no `.env` file exists on disk at
   `backend/.env`. Databricks Apps injects env vars directly into the process — there is no `.env` file
@@ -71,8 +83,10 @@ class OAuthConnection(psycopg.Connection):
         kwargs['password'] = credential.token
         return super().connect(conninfo, **kwargs)
 
+# PGUSER is deliberately not an app.yaml env var — Databricks names the Postgres role after
+# DATABRICKS_CLIENT_ID when the Database resource is attached, and that var is auto-provided.
 pool = ConnectionPool(
-    conninfo=f"dbname={os.environ['PGDATABASE']} user={os.environ['PGUSER']} "
+    conninfo=f"dbname={os.environ['PGDATABASE']} user={os.environ['DATABRICKS_CLIENT_ID']} "
              f"host={os.environ['PGHOST']} port={os.environ.get('PGPORT','5432')} "
              f"sslmode={os.environ.get('PGSSLMODE','require')}",
     connection_class=OAuthConnection,
@@ -103,8 +117,9 @@ New dependencies (`requirements.txt`): `psycopg[binary]`, `psycopg-pool`, `datab
 
 `UPLOAD_DIR` is already env-configurable and used via plain `Path`/file I/O in `routers/cases.py`. Unity
 Catalog Volumes mount as normal filesystem paths inside Databricks compute, so this is pure
-configuration — set `UPLOAD_DIR=/Volumes/hazel_hop_test/default/documents`. No code change. Requires the
-app's service principal to have read/write grants on that volume (infra step, not code).
+configuration — set `UPLOAD_DIR=/Volumes/hazel_hop_test/default/documents`. No code change. The app's
+service principal needs read/write on that volume — granted by attaching it as a **Volume** app resource
+in the UI (see Deployment prerequisites), not via manual SQL/UI permission editing.
 
 ## Frontend connection
 
@@ -141,21 +156,29 @@ backend's own database connectivity.
      query after idle may have brief cold-start latency).
    - Source: [Free Edition limitations](https://docs.databricks.com/aws/en/getting-started/free-edition-limitations),
      fetched 2026-08-18.
-1. Create the Databricks App (empty, so it's assigned a service principal / `DATABRICKS_CLIENT_ID`).
-2. From the Lakebase project's **Connect** modal (Parameters only), get `PGHOST` and confirm
-   `PGDATABASE`.
-3. From the Lakebase branch's **Computes** tab, copy the endpoint resource name for `ENDPOINT_NAME`.
-4. In the Lakebase SQL editor, run once:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS databricks_auth;
-   SELECT databricks_create_role('<this app's DATABRICKS_CLIENT_ID>', 'service_principal');
-   GRANT CONNECT ON DATABASE databricks_postgres TO "<DATABRICKS_CLIENT_ID>";
-   GRANT CREATE, USAGE ON SCHEMA public TO "<DATABRICKS_CLIENT_ID>";
-   ```
-5. Grant the app's service principal read/write on the `/Volumes/hazel_hop_test/default/documents` UC
-   Volume.
-6. Fill the three `TODO` values into `app.yaml` and deploy.
-7. Update and redeploy `Frontend-Hop` with the new backend's `VITE_API_BASE_URL`.
+1. ~~Create the Databricks App~~ — **done**: app `backendhop` exists, Git-linked directly to this repo's
+   `Backend_Hop` branch (App ID `abcafad5-0ac7-4b05-9cfa-f7c205...931a`).
+2. In the app's **Edit** view, **App resources** section, **+ Add resource**:
+   - **Database** → select the `hazel-hop-lakebase` project/branch → permission **Can connect and
+     create** → keep default key `postgres`. This single step replaces the old manual SQL grant entirely
+     — per Databricks docs, attaching a Database resource makes Databricks create the Postgres role
+     (named after the app's `DATABRICKS_CLIENT_ID`) and grant it `CONNECT`/`CREATE` automatically.
+   - **Volume** → select the `hazel_hop_test.default.documents` UC Volume → permission **Can read and
+     write**. This replaces the old manual volume-permission step.
+   - **Secret** (deferred — see below) for `COVERBASE_API_KEY` (and `RAFA_API_KEY` if the code ever
+     requires one for the `onrender` provider — currently it doesn't strictly validate its presence).
+     Requires an existing secret scope; **no Databricks CLI is available in this session to create one**,
+     and Free Edition's UI location for secret-scope creation hasn't been confirmed. Two options: (a) the
+     user creates a scope via `databricks secrets create-scope`/`put-secret` if they have the CLI
+     available on their own machine, or (b) ship the first deploy with `COVERBASE_MODE=mock` (no secret
+     needed) and wire the live key in once a scope exists.
+3. Still need **one** manual value — no resource shortcut exists for it: `PGHOST`, from the Lakebase
+   project's **Connect** modal (**Parameters only** view).
+4. Fill `PGHOST` into `app.yaml` (all other Postgres values are either hardcoded non-secrets or come from
+   the `postgres` resource via `valueFrom`), push to `Backend_Hop`, redeploy.
+5. Update and redeploy `Frontend-Hop` with the new backend's `VITE_API_BASE_URL`, once the app has a live
+   URL (already visible on the app page: `https://backendhop-747....databricksapps.com`, full URL still
+   needed).
 
 ## Testing
 
