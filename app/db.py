@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -10,6 +11,10 @@ from app.config import BACKEND_DIR
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", str(BACKEND_DIR / "hazel_hop.db")))
 if not DATABASE_PATH.is_absolute():
     DATABASE_PATH = BACKEND_DIR / DATABASE_PATH
+
+# Presence of PGHOST is what selects Lakebase Postgres over local SQLite. Set by
+# app.yaml when running as a Databricks App; absent for local/dev.
+PGHOST = os.getenv("PGHOST", "").strip()
 
 STAGES = [
     "NDA_PENDING",
@@ -26,8 +31,70 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_QUESTION_MARK = re.compile(r"\?")
+
+
+class _PostgresConnectionProxy:
+    """Lets every `?`-placeholder query already written for sqlite3 run unchanged
+    against psycopg/Postgres. Everything else (commit, cursor, ...) passes through
+    to the real pooled connection."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, query, params=()):
+        return self._conn.execute(_QUESTION_MARK.sub("%s", query), params)
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+_pg_pool = None
+
+
+def _get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        import psycopg
+        from databricks.sdk import WorkspaceClient
+        from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
+
+        workspace_client = WorkspaceClient()
+
+        class OAuthConnection(psycopg.Connection):
+            @classmethod
+            def connect(cls, conninfo="", **kwargs):
+                # Tokens are minted per new connection (60-minute lifetime); the
+                # pool handles refresh by opening new connections as needed.
+                credential = workspace_client.postgres.generate_database_credential(
+                    endpoint=os.environ["ENDPOINT_NAME"]
+                )
+                kwargs["password"] = credential.token
+                return super().connect(conninfo, **kwargs)
+
+        _pg_pool = ConnectionPool(
+            conninfo=(
+                f"dbname={os.environ['PGDATABASE']} "
+                f"user={os.environ['DATABRICKS_CLIENT_ID']} "
+                f"host={PGHOST} port={os.environ.get('PGPORT', '5432')} "
+                f"sslmode={os.environ.get('PGSSLMODE', 'require')}"
+            ),
+            connection_class=OAuthConnection,
+            kwargs={"row_factory": dict_row},
+            min_size=1,
+            max_size=10,
+            open=True,
+        )
+    return _pg_pool
+
+
 @contextmanager
 def connection():
+    if PGHOST:
+        with _get_pg_pool().connection() as conn:
+            yield _PostgresConnectionProxy(conn)
+        return
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
@@ -44,6 +111,10 @@ def row_dict(row):
 
 
 def init_db():
+    if PGHOST:
+        # Lakebase already has these 9 tables provisioned with a matching schema;
+        # nothing to create or seed here.
+        return
     with connection() as conn:
         conn.executescript(
             """

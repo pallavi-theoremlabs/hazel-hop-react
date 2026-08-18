@@ -704,12 +704,16 @@ async def upload_document(case_id: str, file: UploadFile = File(...), document_t
             cursor = conn.execute(
                 """INSERT INTO documents
                 (case_id, document_type, original_name, stored_name, size_bytes,
-                 created_at, file_sha256) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                 created_at, file_sha256) VALUES (?, ?, ?, ?, ?, ?, ?)
+                RETURNING id""",
                 (case_id, document_type, original_name, stored_name, len(contents), utc_now(), file_sha256),
             )
+            # RETURNING id + fetchone()["id"] (not cursor.lastrowid/fetchone()[0]) works
+            # identically on sqlite3.Row and psycopg's dict_row.
+            new_document_id = cursor.fetchone()["id"]
             document = row_dict(
                 conn.execute(
-                    "SELECT * FROM documents WHERE id = ?", (cursor.lastrowid,)
+                    "SELECT * FROM documents WHERE id = ?", (new_document_id,)
                 ).fetchone()
             )
     except Exception:

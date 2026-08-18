@@ -33,14 +33,20 @@ no need to manually copy the client ID into `app.yaml` at all. And Databricks Ap
 Volume permission steps from the original draft of this doc — see **Deployment prerequisites** below for
 the corrected, much shorter list.
 
-- `app.yaml` at repo root:
+- `app.yaml` at repo root (implemented, values filled in):
   ```yaml
-  command: ['uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '$DATABRICKS_APP_PORT']
+  command: ['sh', '-c', 'uvicorn app.main:app --host 0.0.0.0 --port $DATABRICKS_APP_PORT']
   env:
     - name: FRONTEND_ORIGIN
       value: 'https://frontend-hop.onrender.com'
     - name: UPLOAD_DIR
       value: '/Volumes/hazel_hop_test/default/documents'
+    - name: COVERBASE_BASE_URL
+      value: 'https://api.coverbase.app'
+    - name: RAFA_BASE_URL
+      value: 'https://bank-profile-proxy.onrender.com'
+    - name: RAFA_PROVIDER
+      value: 'onrender'
     - name: PGDATABASE
       value: 'databricks_postgres'
     - name: PGPORT
@@ -48,13 +54,24 @@ the corrected, much shorter list.
     - name: PGSSLMODE
       value: 'require'
     - name: PGHOST
-      value: '<TODO: from Lakebase Connect modal, Parameters only — the one value with no resource shortcut>'
+      value: 'ep-plain-poetry-d8kyapm8.database.us-east-2.cloud.databricks.com'
     - name: ENDPOINT_NAME
-      valueFrom: postgres   # resolves to the Lakebase endpoint path, once the Database resource is attached
+      valueFrom: database   # the Database app resource's actual key, not the "postgres" default
   ```
   `PGUSER` is not set in `app.yaml` at all — the code reads it directly from the auto-provided
   `DATABRICKS_CLIENT_ID` (see Data layer below), since that's exactly the value Databricks uses as the
   Postgres role name when the Database resource is attached.
+
+  The `command` doesn't use Databricks' documented `DATABRICKS_APP_PORT` command-substitution feature
+  directly, because the docs don't state its exact token syntax (`$VAR`, `${VAR}`, etc.) and guessing
+  wrong would mean the app fails to bind with no clear error. Instead, `sh -c '...'` invokes a real shell
+  that expands `$DATABRICKS_APP_PORT` from the process environment — that variable is documented as a
+  normal default env var regardless, so this sidesteps the ambiguity entirely.
+
+  `COVERBASE_MODE` and `COVERBASE_API_KEY` are deliberately absent — `config.py` already defaults
+  `COVERBASE_MODE` to `mock`, which needs no key, so the first deploy doesn't depend on the still-unsolved
+  secret-scope question (see Deployment prerequisites). Live Coverbase mode can be switched on later once
+  a secret resource is wired up.
 
 - `app/config.py`: currently `raise RuntimeError` if no `.env` file exists on disk at
   `backend/.env`. Databricks Apps injects env vars directly into the process — there is no `.env` file
@@ -172,13 +189,18 @@ backend's own database connectivity.
      user creates a scope via `databricks secrets create-scope`/`put-secret` if they have the CLI
      available on their own machine, or (b) ship the first deploy with `COVERBASE_MODE=mock` (no secret
      needed) and wire the live key in once a scope exists.
-3. Still need **one** manual value — no resource shortcut exists for it: `PGHOST`, from the Lakebase
-   project's **Connect** modal (**Parameters only** view).
-4. Fill `PGHOST` into `app.yaml` (all other Postgres values are either hardcoded non-secrets or come from
-   the `postgres` resource via `valueFrom`), push to `Backend_Hop`, redeploy.
-5. Update and redeploy `Frontend-Hop` with the new backend's `VITE_API_BASE_URL`, once the app has a live
-   URL (already visible on the app page: `https://backendhop-747....databricksapps.com`, full URL still
-   needed).
+3. ~~Get `PGHOST`~~ — **done**: `ep-plain-poetry-d8kyapm8.database.us-east-2.cloud.databricks.com`
+   (from the Lakebase Connect modal, Parameters only view).
+4. ~~Fill `PGHOST` into `app.yaml`~~ — **done**, along with `config.py`'s `.env`-required-file fix, the
+   `db.py` Postgres/SQLite dialect shim, the `cursor.lastrowid` → `RETURNING id` fix in
+   `routers/cases.py` (psycopg has no `lastrowid`), and `requirements.txt` additions
+   (`databricks-sdk`, `psycopg[binary]`, `psycopg-pool`). Pushed to `Backend_Hop`.
+5. **Remaining:** redeploy the app in the Databricks UI (it's Git-linked to `Backend_Hop`, so it should
+   pick up the new commits — may need a manual "Deploy" click or a sync step).
+6. **Remaining:** update and redeploy `Frontend-Hop` with the new backend's `VITE_API_BASE_URL`, once the
+   app has a live, working URL (`https://backendhop-747....databricksapps.com`, full URL still needed).
+7. **Still open:** the `COVERBASE_API_KEY` secret question from step 2 above — first deploy ships with
+   `COVERBASE_MODE=mock` (config.py's default) to avoid depending on it.
 
 ## Testing
 

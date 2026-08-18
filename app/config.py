@@ -11,12 +11,11 @@ from dotenv import load_dotenv
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 BACKEND_ENV_PATH = BACKEND_DIR / ".env"
 
-if not BACKEND_ENV_PATH.is_file():
-    raise RuntimeError(f"Backend environment file not found: {BACKEND_ENV_PATH}")
-
 # This path is anchored to this module, so loading never depends on the shell's
 # current working directory. Existing process-level environment variables retain
-# precedence, which is the expected behavior for deployed environments.
+# precedence, which is the expected behavior for deployed environments. The .env
+# file is a local-dev convenience only — deployed environments (e.g. Databricks
+# Apps) inject real process env vars directly and never ship a .env file.
 DOTENV_LOADED = load_dotenv(dotenv_path=BACKEND_ENV_PATH, override=False)
 
 

@@ -1,0 +1,22 @@
+command: ['sh', '-c', 'uvicorn app.main:app --host 0.0.0.0 --port $DATABRICKS_APP_PORT']
+env:
+  - name: FRONTEND_ORIGIN
+    value: 'https://frontend-hop.onrender.com'
+  - name: UPLOAD_DIR
+    value: '/Volumes/hazel_hop_test/default/documents'
+  - name: COVERBASE_BASE_URL
+    value: 'https://api.coverbase.app'
+  - name: RAFA_BASE_URL
+    value: 'https://bank-profile-proxy.onrender.com'
+  - name: RAFA_PROVIDER
+    value: 'onrender'
+  - name: PGDATABASE
+    value: 'databricks_postgres'
+  - name: PGPORT
+    value: '5432'
+  - name: PGSSLMODE
+    value: 'require'
+  - name: PGHOST
+    value: 'ep-plain-poetry-d8kyapm8.database.us-east-2.cloud.databricks.com'
+  - name: ENDPOINT_NAME
+    valueFrom: database
