@@ -134,8 +134,9 @@ backend's own database connectivity.
      `bank-profile-proxy.onrender.com` (RAFA) and `api.coverbase.app` (Coverbase) may be blocked
      outright. A "Verify with LinkedIn" option was not found under Settings → Profile or Linked accounts
      for this account — per Databricks docs the option only appears "if you're eligible," so it may live
-     elsewhere (e.g. a home-page banner) or not be offered to this account yet. **Unresolved — needs
-     confirmation before relying on outbound calls working.**
+     elsewhere or not be offered to this account. **Decision: don't block on finding it — create the app
+     and empirically test whether it can reach `bank-profile-proxy.onrender.com` and `api.coverbase.app`
+     once deployed. If blocked, revisit LinkedIn verification or an egress workaround then.**
    - Up to 3 Databricks Apps per account; one Lakebase project per account (scale-to-zero compute — first
      query after idle may have brief cold-start latency).
    - Source: [Free Edition limitations](https://docs.databricks.com/aws/en/getting-started/free-edition-limitations),
