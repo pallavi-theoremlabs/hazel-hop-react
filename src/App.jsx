@@ -1,10 +1,10 @@
 import React from "react";
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import { STAGES, stageIndex } from './components/ProgressTracker'
 import DocumentsPage from './pages/DocumentsPage'
-import DueDiligencePage from './pages/DueDiligencePage'
 import HazelReviewPage from './pages/HazelReviewPage'
 import InstitutionProfilePage from './pages/InstitutionProfilePage'
 import NdaPage from './pages/NdaPage'
@@ -17,6 +17,7 @@ const CaseContext = createContext(null)
 export const useCaseContext = () => useContext(CaseContext)
 
 function CaseApp() {
+  const { t } = useTranslation('common')
   const { caseId } = useParams()
   const [caseData, setCaseData] = useState(null)
   const [error, setError] = useState('')
@@ -26,8 +27,8 @@ function CaseApp() {
   }, [caseId])
 
   useEffect(() => { refreshCase().catch((err) => setError(err.message)) }, [refreshCase])
-  if (error) return <div className="center-state"><h1>We couldn’t load this case.</h1><p>{error}</p></div>
-  if (!caseData) return <div className="center-state"><span className="spinner" /><p>Loading onboarding case…</p></div>
+  if (error) return <div className="center-state"><h1>{t('feedback.caseLoadErrorTitle')}</h1><p>{error}</p></div>
+  if (!caseData) return <div className="center-state"><span className="spinner" /><p>{t('feedback.loadingCase')}</p></div>
 
   return (
     <CaseContext.Provider value={{ caseData, refreshCase }}>
@@ -35,9 +36,9 @@ function CaseApp() {
         <Routes>
           <Route path="overview" element={<OverviewPage />} />
           <Route path="nda" element={<NdaPage />} />
-          <Route path="institution-profile" element={<Guard stage="INSTITUTION_PROFILE"><InstitutionProfilePage /></Guard>} />
+          <Route path="institution-profile" element={<Navigate to="../due-diligence" replace />} />
+          <Route path="due-diligence" element={<Guard stage="INSTITUTION_PROFILE"><InstitutionProfilePage /></Guard>} />
           <Route path="documents" element={<Guard stage="DOCUMENTS"><DocumentsPage /></Guard>} />
-          <Route path="due-diligence" element={<Guard stage="DUE_DILIGENCE"><DueDiligencePage /></Guard>} />
           <Route path="risk-questions" element={caseData.current_stage === 'HAZEL_REVIEW' ? <Navigate to="../review" replace /> : <Guard stage="RISK_QUESTIONS"><RiskQuestionsPage /></Guard>} />
           <Route path="review" element={<Guard stage="HAZEL_REVIEW"><HazelReviewPage /></Guard>} />
           <Route path="*" element={<Navigate to="overview" replace />} />
