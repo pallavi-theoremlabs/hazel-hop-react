@@ -6,6 +6,7 @@ from psycopg.types.json import Jsonb
 
 from app.db import connection, utc_now
 from app.schemas import SubmitInterestCreate
+from app.tenancy import SYSTEM_SESSION
 from app.services.rafa import (
     RafaAuthenticationError,
     RafaNotFound,
@@ -96,10 +97,22 @@ async def submit_interest(payload: SubmitInterestCreate):
         else f"FDIC-{bank['fdic_certificate_number']}"
     )
 
-    # The tenant is known before the transaction opens rather than taken from the
-    # request, because this endpoint is what *creates* the tenant — a prospective
-    # member has no organisation to present until it has been screened.
-    with connection(org_id=org_id) as conn:
+    # SYSTEM, which is the anonymous-intake context hazel_schema.sql defines for
+    # exactly this endpoint: a prospective member has no institution to present
+    # until it has been screened, and the p_intake policies grant INSERT (and only
+    # INSERT) under this role.
+    #
+    # Passed explicitly rather than inherited from the request because there is no
+    # request tenancy here — /api/public is mounted with require_proxy alone.
+    #
+    # WARNING: every statement in this block still names tables from the retired
+    # backend/migrations/ model — organizations, institutions, rafa_screenings,
+    # onboarding_cases, express_interest_submissions, institution_profiles,
+    # due_diligence. None exist in the final schema, so this endpoint fails on the
+    # first INSERT with UndefinedTable. Fixing the call signature below stops it
+    # failing for the *wrong* reason; it does not make the endpoint work. See the
+    # four-table question in docs/ before porting the body.
+    with connection(session=SYSTEM_SESSION) as conn:
         # First, and inside the same transaction as everything below: every tenant
         # table's org_id DEFAULT resolves to this id and carries a foreign key to
         # this row, so the organisation has to exist before the first of them.
