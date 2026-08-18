@@ -460,7 +460,7 @@ textarea.input { min-height: 105px; resize: vertical; }
 .review-timeline-item p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 .review-bottom-actions { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 22px; }
 
-/* Latest approved August 4 public Submit Interest page. */
+/* Latest approved August 17 public Submit Interest page. */
 .auth.public-interest { min-height: 100vh; display: grid; place-content: center; padding: 34px; background: linear-gradient(135deg, var(--mint), #fff4f2); }
 .public-interest .auth-card { width: min(680px, calc(100vw - 36px)); background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 38px; box-shadow: var(--shadow); }
 .public-interest h1 { font: 400 clamp(36px, 4vw, 54px)/1.02 var(--serif); letter-spacing: -.035em; color: var(--plum); margin: 0; }
@@ -482,6 +482,29 @@ textarea.input { min-height: 105px; resize: vertical; }
 .public-interest > .auth-card > .status { margin: 0 0 16px; }
 .public-interest .local-dev-simulation { margin-top: 24px; border: 1px dashed var(--info); border-radius: 13px; background: #f4f8fc; padding: 18px; }
 .public-interest .local-dev-simulation h2 { margin: 0; color: var(--plum); font: 600 22px/1.2 var(--serif); }
+.public-interest .institution-search-field { margin-bottom: 24px; }
+.public-interest .institution-search-helper { margin: 0 0 9px; }
+.public-interest .institution-search-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.public-interest .institution-search-control .input { min-height: 48px; border-radius: 10px 0 0 10px; }
+.public-interest .institution-search-control .btn { min-height: 48px; border-radius: 0 10px 10px 0; padding-inline: 22px; white-space: nowrap; }
+.public-interest .institution-search-control:focus-within { border-radius: 10px; box-shadow: 0 0 0 4px rgba(235, 0, 31, .12); }
+.public-interest .institution-search-control:focus-within .input { border-color: var(--red); box-shadow: none; }
+.public-interest .institution-search-state { display: flex; align-items: center; gap: 9px; min-height: 32px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+.public-interest .institution-search-state .spinner { width: 18px; height: 18px; border-width: 2px; }
+.public-interest .selected-institution { padding: 22px; margin: 0 0 24px; }
+.public-interest .selected-institution-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.public-interest .selected-institution-title { min-width: 0; }
+.public-interest .selected-institution-title h2 { font: 700 13px/1.25 var(--sans); color: var(--muted); margin-bottom: 12px; }
+.public-interest .selected-institution-name { font-size: 18px; line-height: 1.35; color: var(--plum); overflow-wrap: anywhere; }
+.public-interest .selected-institution-sub { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.public-interest .selected-institution .status { flex: none; }
+.public-interest .selected-institution-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0 0; padding-top: 18px; border-top: 1px solid var(--line); }
+.public-interest .selected-institution-meta div { min-width: 0; }
+.public-interest .selected-institution-meta dt { font-size: 11px; font-weight: 750; color: var(--muted); margin-bottom: 5px; }
+.public-interest .selected-institution-meta dd { margin: 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.public-interest .selected-institution .actions { margin-top: 18px; }
+.public-interest .selected-institution .btn { min-height: 40px; padding: 8px 16px; }
+.public-interest .unsupported-institution { margin: 0 0 24px; }
 
 @media (max-width: 1100px) {
   .shell { grid-template-columns: 76px minmax(0, 1fr); }
@@ -525,6 +548,8 @@ textarea.input { min-height: 105px; resize: vertical; }
   .risk-bulk-actions, .risk-results-summary { align-items: flex-start; flex-direction: column; }
   .auth.public-interest { padding: 18px; }
   .public-interest .auth-card { padding: 26px; }
+  .public-interest .institution-search-control .btn { padding-inline: 15px; }
+  .public-interest .selected-institution-meta { grid-template-columns: 1fr; }
   .dev-public-shortcut { align-items: flex-start; flex-direction: column; }
   .clarification-file { align-items: flex-start; flex-direction: column; }
 }
