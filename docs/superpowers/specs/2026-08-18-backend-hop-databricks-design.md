@@ -122,15 +122,20 @@ backend's own database connectivity.
 
 ## Deployment prerequisites (user-side, outside this repo's code)
 
-0. **Workspace is Databricks Free Edition** (confirmed by user; formerly "Community Edition", retired
-   2025). This has real constraints worth knowing before proceeding:
+0. **Workspace is confirmed Databricks Free Edition** — the workspace UI literally shows "Free Edition"
+   in the product logo (screenshot-confirmed 2026-08-18). It's a personal Free Edition account tied to
+   the user's company email (`@theoremlabs.io`), not a business/enterprise workspace — an earlier
+   attempt to infer this from the presence of Workspace admin settings sections was wrong and got
+   corrected. This has real constraints:
    - **Apps auto-stop after 24 hours** of being started/updated/redeployed, then need a manual restart —
      this backend will not stay up indefinitely unattended.
    - **Outbound internet access is restricted to a limited set of trusted domains** unless the account
-     completes **LinkedIn verification**, which unlocks outbound internet access. Without it, the
-     backend's calls to `bank-profile-proxy.onrender.com` (RAFA) and `api.coverbase.app` (Coverbase) may
-     be blocked outright. **Action: complete LinkedIn verification on this Databricks account before
-     creating the app**, or confirm outbound access is already unlocked.
+     completes **LinkedIn verification**. Without it, the backend's calls to
+     `bank-profile-proxy.onrender.com` (RAFA) and `api.coverbase.app` (Coverbase) may be blocked
+     outright. A "Verify with LinkedIn" option was not found under Settings → Profile or Linked accounts
+     for this account — per Databricks docs the option only appears "if you're eligible," so it may live
+     elsewhere (e.g. a home-page banner) or not be offered to this account yet. **Unresolved — needs
+     confirmation before relying on outbound calls working.**
    - Up to 3 Databricks Apps per account; one Lakebase project per account (scale-to-zero compute — first
      query after idle may have brief cold-start latency).
    - Source: [Free Edition limitations](https://docs.databricks.com/aws/en/getting-started/free-edition-limitations),
