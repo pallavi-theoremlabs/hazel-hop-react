@@ -1,15 +1,16 @@
-import json
 import hashlib
 import logging
-import os
 import re
 from pathlib import Path
 from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from psycopg.types.json import Jsonb
+from starlette.concurrency import run_in_threadpool
 
-from app.db import BACKEND_DIR, STAGES, connection, require_case, row_dict, update_stage, utc_now
+from app.db import STAGES, connection, require_case, row_dict, update_stage, utc_now
+from app.storage import storage
 from app.models import (
     ACTION_REQUIRED_STATUSES,
     UNRESOLVED_STATUSES,
@@ -36,9 +37,6 @@ from app.services.institution_profile_schema import (
 )
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(BACKEND_DIR / "uploads")))
-if not UPLOAD_DIR.is_absolute():
-    UPLOAD_DIR = BACKEND_DIR / UPLOAD_DIR
 ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx"}
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 logger = logging.getLogger("uvicorn.error")
@@ -59,37 +57,31 @@ def get_or_404(conn, case_id):
     return case
 
 
+# The three *_json columns are jsonb now, so psycopg hands back a parsed dict.
+# These used to json.loads() a TEXT column; keeping that would pass a dict to
+# json.loads, raise TypeError, and be swallowed by the except into {} — the data
+# would silently vanish rather than fail.
+
+
 def profile_payload(row):
     profile = row_dict(row)
     if not profile:
         return profile
-    raw_responses = profile.pop("additional_responses_json", "{}") or "{}"
-    try:
-        profile["additional_responses"] = json.loads(raw_responses)
-    except (TypeError, json.JSONDecodeError):
-        logger.warning("Invalid additional_responses_json for case %s", profile.get("case_id"))
-        profile["additional_responses"] = {}
+    profile["additional_responses"] = profile.pop("additional_responses_json", None) or {}
     return profile
 
 
 def express_interest_payload(row):
     submission = row_dict(row) or {}
-    raw_data = submission.pop("data_json", "{}") or "{}"
-    try:
-        extra_data = json.loads(raw_data)
-    except (TypeError, json.JSONDecodeError):
-        logger.warning("Invalid Express Interest data_json for case %s", submission.get("case_id"))
-        extra_data = {}
+    extra_data = submission.pop("data_json", None) or {}
     return {**extra_data, **submission}
 
 
 def document_payload(row, session_document_ids=None):
     document = row_dict(row) or {}
-    raw_details = document.pop("coverbase_sync_details_json", "{}") or "{}"
-    try:
-        document["coverbase_sync_details"] = json.loads(raw_details)
-    except (TypeError, json.JSONDecodeError):
-        document["coverbase_sync_details"] = {}
+    document["coverbase_sync_details"] = (
+        document.pop("coverbase_sync_details_json", None) or {}
+    )
     coverbase_document_id = document.get("coverbase_document_id")
     document["coverbase_in_session"] = (
         coverbase_document_id in session_document_ids
@@ -102,7 +94,7 @@ def document_payload(row, session_document_ids=None):
 def load_review_clarifications(conn, case_id):
     rows = conn.execute(
         """SELECT * FROM review_clarifications
-        WHERE case_id = ? ORDER BY requested_at DESC, created_at DESC""",
+        WHERE case_id = %s ORDER BY requested_at DESC, created_at DESC""",
         (case_id,),
     ).fetchall()
     clarifications = []
@@ -110,7 +102,7 @@ def load_review_clarifications(conn, case_id):
         uploaded_document = None
         if row["uploaded_hazel_document_id"] is not None:
             document_row = conn.execute(
-                "SELECT * FROM documents WHERE id = ? AND case_id = ?",
+                "SELECT * FROM documents WHERE id = %s AND case_id = %s",
                 (row["uploaded_hazel_document_id"], case_id),
             ).fetchone()
             if document_row:
@@ -166,20 +158,19 @@ def clarification_history_events(clarification):
 def backfill_case_document_hashes(conn, case_id):
     """Populate hashes for legacy Hazel rows from their locally stored files."""
     rows = conn.execute(
-        "SELECT id, stored_name FROM documents WHERE case_id = ? AND file_sha256 IS NULL",
+        "SELECT id, stored_name FROM documents WHERE case_id = %s AND file_sha256 IS NULL",
         (case_id,),
     ).fetchall()
     for row in rows:
-        stored_path = UPLOAD_DIR / Path(row["stored_name"]).name
         try:
-            contents = stored_path.read_bytes()
-        except OSError:
+            contents = storage.read(row["stored_name"])
+        except OSError:  # FileNotFoundError from either storage backend
             logger.warning(
                 "Could not backfill SHA-256 for Hazel document %s", row["id"]
             )
             continue
         conn.execute(
-            "UPDATE documents SET file_sha256 = ? WHERE id = ?",
+            "UPDATE documents SET file_sha256 = %s WHERE id = %s",
             (hashlib.sha256(contents).hexdigest(), row["id"]),
         )
 
@@ -192,12 +183,12 @@ async def sync_hazel_document(case, document, contents=None):
         error = "This Hazel case does not have a Coverbase intake session."
         with connection() as conn:
             conn.execute(
-                """UPDATE documents SET coverbase_sync_status = ?,
-                coverbase_sync_error = ?, coverbase_sync_details_json = ? WHERE id = ?""",
-                ("not_configured", error, "{}", document_id),
+                """UPDATE documents SET coverbase_sync_status = %s,
+                coverbase_sync_error = %s, coverbase_sync_details_json = %s WHERE id = %s""",
+                ("not_configured", error, Jsonb({}), document_id),
             )
             saved = conn.execute(
-                "SELECT * FROM documents WHERE id = ?", (document_id,)
+                "SELECT * FROM documents WHERE id = %s", (document_id,)
             ).fetchone()
         return {
             **document_payload(saved),
@@ -209,11 +200,7 @@ async def sync_hazel_document(case, document, contents=None):
     error = None
     try:
         if existing_coverbase_id:
-            raw_existing_details = document.get("coverbase_sync_details_json") or "{}"
-            try:
-                existing_details = json.loads(raw_existing_details)
-            except (TypeError, json.JSONDecodeError):
-                existing_details = {}
+            existing_details = document.get("coverbase_sync_details_json") or {}
             attachment = await coverbase_service.attach_intake_document(
                 session_id, existing_coverbase_id
             )
@@ -224,23 +211,26 @@ async def sync_hazel_document(case, document, contents=None):
             }
         else:
             if contents is None:
-                safe_stored_name = Path(document["stored_name"]).name
-                stored_path = UPLOAD_DIR / safe_stored_name
-                if not stored_path.is_file():
-                    raise RuntimeError("Hazel's stored document file could not be found")
-                contents = stored_path.read_bytes()
+                # Off the event loop: against a Volume this is a Files API round
+                # trip through the control plane, not a local read.
+                try:
+                    contents = await run_in_threadpool(storage.read, document["stored_name"])
+                except FileNotFoundError as exc:
+                    raise RuntimeError(
+                        "Hazel's stored document file could not be found"
+                    ) from exc
             file_sha256 = document.get("file_sha256") or hashlib.sha256(contents).hexdigest()
             if not document.get("file_sha256"):
                 with connection() as conn:
                     conn.execute(
-                        "UPDATE documents SET file_sha256 = ? WHERE id = ?",
+                        "UPDATE documents SET file_sha256 = %s WHERE id = %s",
                         (file_sha256, document_id),
                     )
                 document["file_sha256"] = file_sha256
             with connection() as conn:
                 reusable = conn.execute(
                     """SELECT id, coverbase_document_id FROM documents
-                    WHERE case_id = ? AND id != ? AND file_sha256 = ?
+                    WHERE case_id = %s AND id != %s AND file_sha256 = %s
                     AND coverbase_sync_status = 'synced'
                     AND coverbase_document_id IS NOT NULL
                     ORDER BY created_at, id LIMIT 1""",
@@ -287,21 +277,21 @@ async def sync_hazel_document(case, document, contents=None):
     synced_at = utc_now() if status == "synced" else None
     with connection() as conn:
         conn.execute(
-            """UPDATE documents SET coverbase_document_id = ?,
-            coverbase_sync_status = ?, coverbase_synced_at = ?,
-            coverbase_sync_error = ?, coverbase_sync_details_json = ?
-            WHERE id = ?""",
+            """UPDATE documents SET coverbase_document_id = %s,
+            coverbase_sync_status = %s, coverbase_synced_at = %s,
+            coverbase_sync_error = %s, coverbase_sync_details_json = %s
+            WHERE id = %s""",
             (
                 coverbase_document_id,
                 status,
                 synced_at,
                 error,
-                json.dumps(result),
+                Jsonb(result),
                 document_id,
             ),
         )
         saved = conn.execute(
-            "SELECT * FROM documents WHERE id = ?", (document_id,)
+            "SELECT * FROM documents WHERE id = %s", (document_id,)
         ).fetchone()
     logger.info(
         "[Hazel] document %s Coverbase sync status %s%s",
@@ -337,7 +327,7 @@ def get_case(case_id: str):
     with connection() as conn:
         case = get_or_404(conn, case_id)
         submission = conn.execute(
-            "SELECT legal_name, contact_email FROM express_interest_submissions WHERE case_id = ?",
+            "SELECT legal_name, contact_email FROM express_interest_submissions WHERE case_id = %s",
             (case_id,),
         ).fetchone()
         case["legal_name"] = submission["legal_name"] if submission else None
@@ -362,7 +352,7 @@ async def ensure_coverbase_session(case_id: str):
                 "reused": True,
             }
         express_interest_row = conn.execute(
-            "SELECT * FROM express_interest_submissions WHERE case_id = ?", (case_id,)
+            "SELECT * FROM express_interest_submissions WHERE case_id = %s", (case_id,)
         ).fetchone()
         if not express_interest_row:
             raise HTTPException(409, "Hazel Express Interest data is required before creating a Coverbase session.")
@@ -373,7 +363,7 @@ async def ensure_coverbase_session(case_id: str):
     except (httpx.HTTPError, RuntimeError) as exc:
         with connection() as conn:
             conn.execute(
-                "UPDATE onboarding_cases SET coverbase_status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE onboarding_cases SET coverbase_status = %s, updated_at = %s WHERE id = %s",
                 ("error", utc_now(), case_id),
             )
         raise HTTPException(502, f"Coverbase intake session could not be created: {exc}") from exc
@@ -384,8 +374,8 @@ async def ensure_coverbase_session(case_id: str):
     with connection() as conn:
         conn.execute(
             """UPDATE onboarding_cases
-            SET coverbase_session_id = ?, coverbase_vendor_id = ?, coverbase_status = ?, updated_at = ?
-            WHERE id = ? AND coverbase_session_id IS NULL""",
+            SET coverbase_session_id = %s, coverbase_vendor_id = %s, coverbase_status = %s, updated_at = %s
+            WHERE id = %s AND coverbase_session_id IS NULL""",
             (
                 session_id,
                 session.get("vendor_id"),
@@ -446,7 +436,7 @@ async def create_coverbase_session(case_id: str):
 def get_institution_profile(case_id: str):
     with connection() as conn:
         get_or_404(conn, case_id)
-        return profile_payload(conn.execute("SELECT * FROM institution_profiles WHERE case_id = ?", (case_id,)).fetchone())
+        return profile_payload(conn.execute("SELECT * FROM institution_profiles WHERE case_id = %s", (case_id,)).fetchone())
 
 
 async def load_institution_profile_schema(case_id: str):
@@ -454,7 +444,7 @@ async def load_institution_profile_schema(case_id: str):
         case = get_or_404(conn, case_id)
         submission = express_interest_payload(
             conn.execute(
-                "SELECT * FROM express_interest_submissions WHERE case_id = ?", (case_id,)
+                "SELECT * FROM express_interest_submissions WHERE case_id = %s", (case_id,)
             ).fetchone()
         )
     if case["coverbase_session_id"]:
@@ -515,7 +505,7 @@ async def get_institution_profile_questions(case_id: str):
         case = get_or_404(conn, case_id)
         require_at_least(case, "INSTITUTION_PROFILE")
         profile = profile_payload(
-            conn.execute("SELECT * FROM institution_profiles WHERE case_id = ?", (case_id,)).fetchone()
+            conn.execute("SELECT * FROM institution_profiles WHERE case_id = %s", (case_id,)).fetchone()
         )
     schema = await load_institution_profile_schema(case_id)
     coverbase_responses = schema.get("responses", {})
@@ -533,7 +523,7 @@ async def save_institution_profile_responses(
         coverbase_session_id = case["coverbase_session_id"]
         submit_interest = express_interest_payload(
             conn.execute(
-                "SELECT * FROM express_interest_submissions WHERE case_id = ?",
+                "SELECT * FROM express_interest_submissions WHERE case_id = %s",
                 (case_id,),
             ).fetchone()
         )
@@ -551,16 +541,16 @@ async def save_institution_profile_responses(
                 mapped_values[storage_key] = response.get("choice") or response.get("custom") or ""
             elif isinstance(response, str):
                 mapped_values[storage_key] = response
-        assignments = ["additional_responses_json = ?", "updated_at = ?"]
-        values = [json.dumps(payload.responses), now]
+        assignments = ["additional_responses_json = %s", "updated_at = %s"]
+        values = [Jsonb(payload.responses), now]
         for storage_key, value in mapped_values.items():
-            assignments.append(f"{storage_key} = ?")
+            assignments.append(f"{storage_key} = %s")
             values.append(value)
         insert_columns = ["case_id", "additional_responses_json", "updated_at", *mapped_values]
-        insert_values = [case_id, json.dumps(payload.responses), now, *mapped_values.values()]
+        insert_values = [case_id, Jsonb(payload.responses), now, *mapped_values.values()]
         conn.execute(
             f"""INSERT INTO institution_profiles ({', '.join(insert_columns)})
-            VALUES ({', '.join('?' for _ in insert_columns)})
+            VALUES ({', '.join('%s' for _ in insert_columns)})
             ON CONFLICT(case_id) DO UPDATE SET {', '.join(assignments)}""",
             insert_values + values,
         )
@@ -624,12 +614,12 @@ def save_institution_profile(case_id: str, payload: InstitutionProfileUpdate):
         data = payload.model_dump()
         additional_responses = data.pop("additional_responses", {})
         columns = list(data.keys())
-        assignments = ", ".join(f"{column} = ?" for column in columns)
+        assignments = ", ".join(f"{column} = %s" for column in columns)
         conn.execute(
-            f"UPDATE institution_profiles SET {assignments}, additional_responses_json = ?, updated_at = ? WHERE case_id = ?",
-            [data[c] for c in columns] + [json.dumps(additional_responses), utc_now(), case_id],
+            f"UPDATE institution_profiles SET {assignments}, additional_responses_json = %s, updated_at = %s WHERE case_id = %s",
+            [data[c] for c in columns] + [Jsonb(additional_responses), utc_now(), case_id],
         )
-        return profile_payload(conn.execute("SELECT * FROM institution_profiles WHERE case_id = ?", (case_id,)).fetchone())
+        return profile_payload(conn.execute("SELECT * FROM institution_profiles WHERE case_id = %s", (case_id,)).fetchone())
 
 
 @router.post("/{case_id}/institution-profile/complete")
@@ -638,11 +628,11 @@ def complete_institution_profile(case_id: str):
         case = get_or_404(conn, case_id)
         require_at_least(case, "INSTITUTION_PROFILE")
         profile = profile_payload(
-            conn.execute("SELECT * FROM institution_profiles WHERE case_id = ?", (case_id,)).fetchone()
+            conn.execute("SELECT * FROM institution_profiles WHERE case_id = %s", (case_id,)).fetchone()
         ) or {}
         express_interest = express_interest_payload(
             conn.execute(
-                "SELECT * FROM express_interest_submissions WHERE case_id = ?", (case_id,)
+                "SELECT * FROM express_interest_submissions WHERE case_id = %s", (case_id,)
             ).fetchone()
         )
         required_express_interest = [
@@ -672,7 +662,7 @@ async def get_documents(case_id: str):
     with connection() as conn:
         get_or_404(conn, case_id)
         rows = conn.execute(
-            "SELECT * FROM documents WHERE case_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM documents WHERE case_id = %s ORDER BY created_at DESC",
             (case_id,),
         ).fetchall()
     # Hazel is the member-facing source of truth. Coverbase attachment metadata
@@ -696,26 +686,39 @@ async def upload_document(case_id: str, file: UploadFile = File(...), document_t
     file_sha256 = hashlib.sha256(contents).hexdigest()
     safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(original_name).stem).strip("-") or "document"
     stored_name = f"{case_id}-{uuid4().hex}-{safe_stem}{suffix}"
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    (UPLOAD_DIR / stored_name).write_bytes(contents)
+
+    # Ordering is unchanged from the original: the file is stored first, then the
+    # row is inserted, and a failed insert compensates by deleting the file. Both
+    # halves run in a worker thread — against a Volume the write is a Files API
+    # round trip, and the database driver is synchronous, so leaving either on the
+    # event loop would stall every other request for the duration of an upload.
+    await run_in_threadpool(storage.write, stored_name, contents)
     try:
-        with connection() as conn:
-            backfill_case_document_hashes(conn, case_id)
-            cursor = conn.execute(
-                """INSERT INTO documents
-                (case_id, document_type, original_name, stored_name, size_bytes,
-                 created_at, file_sha256) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (case_id, document_type, original_name, stored_name, len(contents), utc_now(), file_sha256),
-            )
-            document = row_dict(
-                conn.execute(
-                    "SELECT * FROM documents WHERE id = ?", (cursor.lastrowid,)
-                ).fetchone()
-            )
+        document = await run_in_threadpool(
+            _insert_document, case_id, document_type, original_name, stored_name,
+            len(contents), file_sha256,
+        )
     except Exception:
-        (UPLOAD_DIR / stored_name).unlink(missing_ok=True)
+        await run_in_threadpool(storage.delete, stored_name)
         raise
     return await sync_hazel_document(case, document, contents)
+
+
+def _insert_document(case_id, document_type, original_name, stored_name, size_bytes, file_sha256):
+    with connection() as conn:
+        backfill_case_document_hashes(conn, case_id)
+        # RETURNING replaces cursor.lastrowid, which is a sqlite3-ism with no
+        # psycopg equivalent. It also removes the follow-up SELECT.
+        return row_dict(
+            conn.execute(
+                """INSERT INTO documents
+                (case_id, document_type, original_name, stored_name, size_bytes,
+                 created_at, file_sha256) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING *""",
+                (case_id, document_type, original_name, stored_name, size_bytes,
+                 utc_now(), file_sha256),
+            ).fetchone()
+        )
 
 
 @router.post("/{case_id}/documents/{document_id}/coverbase-sync")
@@ -725,7 +728,7 @@ async def retry_document_coverbase_sync(case_id: str, document_id: int):
         require_at_least(case, "DOCUMENTS")
         document = row_dict(
             conn.execute(
-                "SELECT * FROM documents WHERE id = ? AND case_id = ?",
+                "SELECT * FROM documents WHERE id = %s AND case_id = %s",
                 (document_id, case_id),
             ).fetchone()
         )
@@ -738,18 +741,18 @@ async def retry_document_coverbase_sync(case_id: str, document_id: int):
 async def delete_document(case_id: str, document_id: int):
     with connection() as conn:
         case = get_or_404(conn, case_id)
-        row = conn.execute("SELECT * FROM documents WHERE id = ? AND case_id = ?", (document_id, case_id)).fetchone()
+        row = conn.execute("SELECT * FROM documents WHERE id = %s AND case_id = %s", (document_id, case_id)).fetchone()
         if not row:
             raise HTTPException(404, "Document not found")
-        conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+        conn.execute("DELETE FROM documents WHERE id = %s", (document_id,))
         remaining_reference = None
         if row["coverbase_document_id"]:
             remaining_reference = conn.execute(
-                """SELECT id FROM documents WHERE case_id = ?
-                AND coverbase_document_id = ? LIMIT 1""",
+                """SELECT id FROM documents WHERE case_id = %s
+                AND coverbase_document_id = %s LIMIT 1""",
                 (case_id, row["coverbase_document_id"]),
             ).fetchone()
-    (UPLOAD_DIR / row["stored_name"]).unlink(missing_ok=True)
+    await run_in_threadpool(storage.delete, row["stored_name"])
     if (
         row["coverbase_document_id"]
         and case.get("coverbase_session_id")
@@ -778,7 +781,7 @@ def complete_documents(case_id: str):
         require_at_least(case, "DOCUMENTS")
         required = conn.execute(
             """SELECT coverbase_sync_status FROM documents
-            WHERE case_id = ? AND document_type = 'bsa_policy'
+            WHERE case_id = %s AND document_type = 'bsa_policy'
             ORDER BY created_at DESC, id DESC LIMIT 1""",
             (case_id,),
         ).fetchone()
@@ -807,8 +810,9 @@ def complete_documents(case_id: str):
 def get_due_diligence(case_id: str):
     with connection() as conn:
         get_or_404(conn, case_id)
-        row = conn.execute("SELECT data_json, updated_at FROM due_diligence WHERE case_id = ?", (case_id,)).fetchone()
-        return {"data": json.loads(row["data_json"]), "updated_at": row["updated_at"]}
+        row = conn.execute("SELECT data_json, updated_at FROM due_diligence WHERE case_id = %s", (case_id,)).fetchone()
+        # data_json is jsonb; psycopg returns it already parsed.
+        return {"data": row["data_json"], "updated_at": row["updated_at"]}
 
 
 @router.put("/{case_id}/due-diligence")
@@ -817,7 +821,7 @@ def save_due_diligence(case_id: str, payload: DueDiligenceUpdate):
         case = get_or_404(conn, case_id)
         require_at_least(case, "DUE_DILIGENCE")
         now = utc_now()
-        conn.execute("UPDATE due_diligence SET data_json = ?, updated_at = ? WHERE case_id = ?", (json.dumps(payload.data), now, case_id))
+        conn.execute("UPDATE due_diligence SET data_json = %s, updated_at = %s WHERE case_id = %s", (Jsonb(payload.data), now, case_id))
         return {"data": payload.data, "updated_at": now}
 
 
@@ -992,17 +996,17 @@ async def build_hazel_review_payload(case_id: str):
     with connection() as conn:
         conn.execute(
             """UPDATE onboarding_cases
-            SET coverbase_status = ?, coverbase_vendor_id = ?,
-                hazel_review_status = ?, review_status = ?,
-                additional_information_required = ?,
-                updated_at = ?
-            WHERE id = ?""",
+            SET coverbase_status = %s, coverbase_vendor_id = %s,
+                hazel_review_status = %s, review_status = %s,
+                additional_information_required = %s,
+                updated_at = %s
+            WHERE id = %s""",
             (
                 coverbase_status,
                 coverbase_vendor_id,
                 review_state,
                 review_status,
-                int(review_state == "action_required"),
+                review_state == "action_required",  # boolean column, no int() cast
                 utc_now() if changed else case["updated_at"],
                 case_id,
             ),
@@ -1057,7 +1061,7 @@ def save_clarification_draft(
         if case["coverbase_status"] in {"accepted", "rejected"}:
             raise HTTPException(409, "The Coverbase review decision is already final.")
         clarification = conn.execute(
-            "SELECT * FROM review_clarifications WHERE id = ? AND case_id = ?",
+            "SELECT * FROM review_clarifications WHERE id = %s AND case_id = %s",
             (clarification_id, case_id),
         ).fetchone()
         if not clarification:
@@ -1065,23 +1069,23 @@ def save_clarification_draft(
         if clarification["status"] not in ACTION_REQUIRED_STATUSES:
             raise HTTPException(409, "This clarification can no longer be edited.")
         conn.execute(
-            """UPDATE review_clarifications SET member_response = ?,
-            status = 'draft', updated_at = ? WHERE id = ?""",
+            """UPDATE review_clarifications SET member_response = %s,
+            status = 'draft', updated_at = %s WHERE id = %s""",
             (payload.response, now, clarification_id),
         )
         conn.execute(
-            """UPDATE onboarding_cases SET additional_information_required = 1,
+            """UPDATE onboarding_cases SET additional_information_required = true,
             hazel_review_status = 'action_required',
             review_status = 'Action required — additional information requested',
-            updated_at = ? WHERE id = ?""",
+            updated_at = %s WHERE id = %s""",
             (now, case_id),
         )
         saved = conn.execute(
-            "SELECT * FROM review_clarifications WHERE id = ?", (clarification_id,)
+            "SELECT * FROM review_clarifications WHERE id = %s", (clarification_id,)
         ).fetchone()
         uploaded = (
             conn.execute(
-                "SELECT * FROM documents WHERE id = ?",
+                "SELECT * FROM documents WHERE id = %s",
                 (saved["uploaded_hazel_document_id"],),
             ).fetchone()
             if saved["uploaded_hazel_document_id"] is not None
@@ -1098,7 +1102,7 @@ async def upload_clarification_document(
         case = get_or_404(conn, case_id)
         require_at_least(case, "HAZEL_REVIEW")
         clarification = conn.execute(
-            "SELECT * FROM review_clarifications WHERE id = ? AND case_id = ?",
+            "SELECT * FROM review_clarifications WHERE id = %s AND case_id = %s",
             (clarification_id, case_id),
         ).fetchone()
         if not clarification:
@@ -1114,19 +1118,19 @@ async def upload_clarification_document(
     now = utc_now()
     with connection() as conn:
         conn.execute(
-            """UPDATE review_clarifications SET uploaded_hazel_document_id = ?,
-            status = 'draft', updated_at = ? WHERE id = ? AND case_id = ?""",
+            """UPDATE review_clarifications SET uploaded_hazel_document_id = %s,
+            status = 'draft', updated_at = %s WHERE id = %s AND case_id = %s""",
             (document["id"], now, clarification_id, case_id),
         )
         conn.execute(
-            """UPDATE onboarding_cases SET additional_information_required = 1,
+            """UPDATE onboarding_cases SET additional_information_required = true,
             hazel_review_status = 'action_required',
             review_status = 'Action required — additional information requested',
-            updated_at = ? WHERE id = ?""",
+            updated_at = %s WHERE id = %s""",
             (now, case_id),
         )
         updated = conn.execute(
-            "SELECT * FROM review_clarifications WHERE id = ?", (clarification_id,)
+            "SELECT * FROM review_clarifications WHERE id = %s", (clarification_id,)
         ).fetchone()
     return {
         "clarification": clarification_payload(updated, document),
@@ -1143,7 +1147,7 @@ def submit_clarification_response(case_id: str, clarification_id: str):
         if case["coverbase_status"] in {"accepted", "rejected"}:
             raise HTTPException(409, "The Coverbase review decision is already final.")
         clarification = conn.execute(
-            "SELECT * FROM review_clarifications WHERE id = ? AND case_id = ?",
+            "SELECT * FROM review_clarifications WHERE id = %s AND case_id = %s",
             (clarification_id, case_id),
         ).fetchone()
         if not clarification:
@@ -1159,23 +1163,23 @@ def submit_clarification_response(case_id: str, clarification_id: str):
             raise HTTPException(422, "Upload the requested document before submitting.")
         conn.execute(
             """UPDATE review_clarifications SET status = 'submitted',
-            submitted_at = ?, coverbase_sync_status = 'pending_integration',
-            updated_at = ? WHERE id = ?""",
+            submitted_at = %s, coverbase_sync_status = 'pending_integration',
+            updated_at = %s WHERE id = %s""",
             (now, now, clarification_id),
         )
         conn.execute(
-            """UPDATE onboarding_cases SET additional_information_required = 0,
+            """UPDATE onboarding_cases SET additional_information_required = false,
             hazel_review_status = 'response_submitted',
             review_status = 'Response submitted · review resumed',
-            updated_at = ? WHERE id = ?""",
+            updated_at = %s WHERE id = %s""",
             (now, case_id),
         )
         submitted = conn.execute(
-            "SELECT * FROM review_clarifications WHERE id = ?", (clarification_id,)
+            "SELECT * FROM review_clarifications WHERE id = %s", (clarification_id,)
         ).fetchone()
         uploaded = (
             conn.execute(
-                "SELECT * FROM documents WHERE id = ?",
+                "SELECT * FROM documents WHERE id = %s",
                 (submitted["uploaded_hazel_document_id"],),
             ).fetchone()
             if submitted["uploaded_hazel_document_id"] is not None

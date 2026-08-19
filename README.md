@@ -27,14 +27,18 @@ hazel-hop-react/
 Backend:
 
 ```bash
-cd /Users/pallavi/hazel-hop-react/backend
+cd hazel-hop-react
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload --port 8000
+pip install -r requirements.txt      # repo root: Databricks Apps only reads this path
+cp backend/.env.example backend/.env
+uvicorn app.main:app --reload --port 8000 --app-dir backend
 ```
+
+`--app-dir backend` is how the backend package is found, locally and in the deployed
+App alike. There is deliberately no root `main.py` shim: two entry mechanisms that
+disagree produce an `ImportError` at startup that reads like a packaging problem.
 
 Frontend, in a second terminal:
 
@@ -72,11 +76,11 @@ NDA_ACCEPTED
 → HAZEL_REVIEW
 ```
 
-The seeded synthetic case starts on NDA. Every transition is persisted in SQLite and guarded in both the React router and FastAPI routes. The member journey is NDA → Due Diligence → Documents → Risk Questions → Hazel Review. The Due Diligence screen uses the backward-compatible `institution-profile` API contract; saving it never starts a second Coverbase intake.
+The seeded synthetic case starts on NDA. Every transition is persisted in SQLite and guarded in both the React router and FastAPI routes. Profile saves never start Coverbase. The user explicitly starts risk processing only after Institution Profile, required Documents, and Due Diligence are complete.
 
-Coverbase-generated answers remain suggestions. Member edits and confirmations are stored in Hazel's `risk_answers` table, separately from provider session data. The member-facing review page omits raw scores, internal weights, private notes, and operator-only reasoning.
+Coverbase-generated answers remain suggestions, and they live in Coverbase. Hazel does not store risk answers of its own: member edits and confirmations are proxied straight through to Coverbase by `save_risk_answer`. (Earlier revisions of this document described a `risk_answers` table. It existed in the schema but was never read from or written to, and it has been removed.) The member-facing review page omits raw scores, internal weights, private notes, and operator-only reasoning.
 
-Uploaded files are validated for extension and 25 MB size, assigned server-generated names, saved under `backend/uploads`, and indexed in SQLite. The required document is the board-approved BSA/AML/OFAC policy; Wolfsberg CBDDQ and other documents are optional.
+Uploaded files are validated for extension and 25 MB size, assigned server-generated names, saved under `UPLOAD_DIR`, and indexed in Postgres. The required document is the board-approved BSA/AML/OFAC policy; Wolfsberg CBDDQ and other documents are optional.
 
 ## API overview
 

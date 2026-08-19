@@ -1,15 +1,15 @@
-import json
 import logging
 import os
 import re
-from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
+from psycopg.types.json import Jsonb
 
 from app.db import connection, require_case, utc_now
 from app.models import clarification_payload
 from app.schemas import DevCaseCreate, DevClarificationCreate
+from app.storage import storage
 
 router = APIRouter(prefix="/api/dev", tags=["local-development"])
 logger = logging.getLogger("uvicorn.error")
@@ -23,6 +23,19 @@ def require_synthetic_case_id(case_id: str) -> None:
 
 
 def require_dev_mode() -> None:
+    """Refuse the whole router unless HAZEL_DEV_MODE is on.
+
+    Called by every handler here, which it did not used to be: create_case and
+    reset_case were ungated, and reset_case deletes a case's documents and rewinds
+    its stage. That was survivable while the only way to reach this API was through
+    the Databricks auth proxy with a workspace identity. It is not survivable now
+    that an Azure BFF forwards /api/* on behalf of unauthenticated members, so the
+    gate is applied uniformly here rather than relying on the proxy's route
+    allowlist as the only defence.
+
+    404 rather than 403: with dev mode off these endpoints do not exist, and saying
+    "forbidden" would confirm they are there to be found.
+    """
     if not DEV_MODE_ENABLED:
         raise HTTPException(404, "Not found")
 
@@ -32,7 +45,7 @@ def case_payload(conn, case_id: str):
     if not case:
         raise HTTPException(404, "Onboarding case not found")
     submission = conn.execute(
-        "SELECT legal_name, contact_email FROM express_interest_submissions WHERE case_id = ?",
+        "SELECT legal_name, contact_email FROM express_interest_submissions WHERE case_id = %s",
         (case_id,),
     ).fetchone()
     return {
@@ -44,6 +57,7 @@ def case_payload(conn, case_id: str):
 
 @router.post("/create-case", status_code=201)
 def create_case(payload: DevCaseCreate):
+    require_dev_mode()
     require_synthetic_case_id(payload.case_id)
     now = utc_now()
     with connection() as conn:
@@ -53,14 +67,14 @@ def create_case(payload: DevCaseCreate):
             """INSERT INTO onboarding_cases
             (id, institution_id, current_stage, review_status, hazel_review_status,
              additional_information_required, created_at, updated_at)
-            VALUES (?, ?, 'NDA_PENDING', 'Not started', NULL, 0, ?, ?)""",
+            VALUES (%s, %s, 'NDA_PENDING', 'Not started', NULL, false, %s, %s)""",
             (payload.case_id, f"LOCAL-{payload.case_id}", now, now),
         )
         conn.execute(
             """INSERT INTO express_interest_submissions
             (case_id, legal_name, fdic_certificate_number, institution_type, website,
              contact_email, data_json, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 payload.case_id,
                 payload.legal_name,
@@ -68,16 +82,16 @@ def create_case(payload: DevCaseCreate):
                 payload.institution_type,
                 payload.website,
                 payload.primary_applicant_email,
-                json.dumps({"primary_applicant_email": payload.primary_applicant_email}),
+                Jsonb({"primary_applicant_email": payload.primary_applicant_email}),
                 now,
             ),
         )
         conn.execute(
-            "INSERT INTO institution_profiles (case_id, additional_responses_json, updated_at) VALUES (?, '{}', ?)",
+            "INSERT INTO institution_profiles (case_id, additional_responses_json, updated_at) VALUES (%s, '{}', %s)",
             (payload.case_id, now),
         )
         conn.execute(
-            "INSERT INTO due_diligence (case_id, data_json, updated_at) VALUES (?, '{}', ?)",
+            "INSERT INTO due_diligence (case_id, data_json, updated_at) VALUES (%s, '{}', %s)",
             (payload.case_id, now),
         )
         created = case_payload(conn, payload.case_id)
@@ -87,6 +101,7 @@ def create_case(payload: DevCaseCreate):
 
 @router.post("/reset-case/{case_id}")
 def reset_case(case_id: str):
+    require_dev_mode()
     require_synthetic_case_id(case_id)
     with connection() as conn:
         case = require_case(conn, case_id)
@@ -95,7 +110,7 @@ def reset_case(case_id: str):
         stored_names = [
             row["stored_name"]
             for row in conn.execute(
-                "SELECT stored_name FROM documents WHERE case_id = ?", (case_id,)
+                "SELECT stored_name FROM documents WHERE case_id = %s", (case_id,)
             ).fetchall()
         ]
         remote_session_id = case.get("coverbase_session_id")
@@ -106,37 +121,39 @@ def reset_case(case_id: str):
             institution_profile_completed_at = NULL, documents_completed_at = NULL,
             due_diligence_completed_at = NULL, risk_questions_submitted_at = NULL,
             hazel_review_status = NULL, review_status = 'Not started',
-            additional_information_required = 0,
+            additional_information_required = false,
             coverbase_session_id = NULL, coverbase_vendor_id = NULL,
-            coverbase_status = NULL, updated_at = ?
-            WHERE id = ?""",
+            coverbase_status = NULL, updated_at = %s
+            WHERE id = %s""",
             (now, case_id),
         )
         conn.execute(
             """UPDATE institution_profiles SET admission_type = '',
             international_correspondent_relationships = '', has_dba = '',
             has_fintech_or_baas_programs = '', additional_responses_json = '{}',
-            updated_at = ? WHERE case_id = ?""",
+            updated_at = %s WHERE case_id = %s""",
             (now, case_id),
         )
-        conn.execute("DELETE FROM documents WHERE case_id = ?", (case_id,))
-        conn.execute("DELETE FROM review_clarifications WHERE case_id = ?", (case_id,))
-        conn.execute("DELETE FROM risk_answers WHERE case_id = ?", (case_id,))
+        conn.execute("DELETE FROM documents WHERE case_id = %s", (case_id,))
+        conn.execute("DELETE FROM review_clarifications WHERE case_id = %s", (case_id,))
+        # The DELETE from risk_answers that used to sit here is gone with the
+        # table. It was the only remaining reference to it besides its own DDL —
+        # nothing ever inserted or selected from it, because the real risk answers
+        # live in Coverbase (see save_risk_answer in cases.py).
         conn.execute(
-            """INSERT INTO due_diligence (case_id, data_json, updated_at) VALUES (?, '{}', ?)
+            """INSERT INTO due_diligence (case_id, data_json, updated_at) VALUES (%s, '{}', %s)
             ON CONFLICT(case_id) DO UPDATE SET data_json = '{}', updated_at = excluded.updated_at""",
             (case_id, now),
         )
         reset = case_payload(conn, case_id)
 
-    from app.routers.cases import UPLOAD_DIR
-
+    # This handler is a plain `def`, so FastAPI already runs it in a worker
+    # thread; the storage calls below may be Files API round trips.
     for stored_name in stored_names:
-        safe_name = Path(stored_name).name
         try:
-            (UPLOAD_DIR / safe_name).unlink(missing_ok=True)
+            storage.delete(stored_name)
         except OSError as exc:
-            logger.warning("Could not remove reset-case upload %s: %s", safe_name, exc)
+            logger.warning("Could not remove reset-case upload %s: %s", stored_name, exc)
     logger.info(
         "[Hazel] reset synthetic onboarding case %s; remote Coverbase session was not deleted%s",
         case_id,
@@ -166,7 +183,7 @@ def create_review_clarification(case_id: str, payload: DevClarificationCreate):
             raise HTTPException(409, "A finalized Coverbase decision cannot receive a clarification.")
         if payload.replacement_of_hazel_document_id is not None:
             replacement = conn.execute(
-                "SELECT id FROM documents WHERE id = ? AND case_id = ?",
+                "SELECT id FROM documents WHERE id = %s AND case_id = %s",
                 (payload.replacement_of_hazel_document_id, case_id),
             ).fetchone()
             if not replacement:
@@ -178,16 +195,16 @@ def create_review_clarification(case_id: str, payload: DevClarificationCreate):
              status, member_response, submitted_at, document_required,
              document_label, replacement_of_hazel_document_id,
              uploaded_hazel_document_id, coverbase_sync_status, created_at, updated_at)
-            VALUES (?, ?, 'hazel_dev', NULL, 'Hazel Review Team', ?,
-                    'additional_information', NULL, ?, ?, 'open', '', NULL,
-                    ?, ?, ?, NULL, 'not_started', ?, ?)""",
+            VALUES (%s, %s, 'hazel_dev', NULL, 'Hazel Review Team', %s,
+                    'additional_information', NULL, %s, %s, 'open', '', NULL,
+                    %s, %s, %s, NULL, 'not_started', %s, %s)""",
             (
                 clarification_id,
                 case_id,
                 payload.request_text,
                 now,
                 payload.due_at,
-                int(payload.document_required),
+                payload.document_required,  # boolean column now, no int() cast
                 payload.document_label,
                 payload.replacement_of_hazel_document_id,
                 now,
@@ -195,14 +212,14 @@ def create_review_clarification(case_id: str, payload: DevClarificationCreate):
             ),
         )
         conn.execute(
-            """UPDATE onboarding_cases SET additional_information_required = 1,
+            """UPDATE onboarding_cases SET additional_information_required = true,
             hazel_review_status = 'action_required',
             review_status = 'Action required — additional information requested',
-            updated_at = ? WHERE id = ?""",
+            updated_at = %s WHERE id = %s""",
             (now, case_id),
         )
         created = conn.execute(
-            "SELECT * FROM review_clarifications WHERE id = ?", (clarification_id,)
+            "SELECT * FROM review_clarifications WHERE id = %s", (clarification_id,)
         ).fetchone()
     logger.info(
         "[Hazel] created synthetic review clarification %s for case %s",

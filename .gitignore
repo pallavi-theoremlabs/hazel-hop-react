@@ -1,6 +1,12 @@
 .DS_Store
 node_modules/
 dist/
+# Databricks Apps does not run `npm run build`, so the compiled frontend has to be
+# committed for the App to have anything to serve. Re-including the directory is
+# what makes this work: git will not re-include a file whose parent directory is
+# excluded, so `!frontend/dist/**` alone would do nothing. node_modules/ stays
+# ignored above and is never traversed, so no dependency dist/ folders leak in.
+!frontend/dist/
 .venv/
 __pycache__/
 *.py[cod]
@@ -11,3 +17,6 @@ backend/.env
 frontend/.env
 
 .gstack/
+
+# Local copy of the deployed HAZEL_PROXY_KEY, for test curls. Never committed.
+.hazel_proxy_key

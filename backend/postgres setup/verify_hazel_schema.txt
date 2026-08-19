@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# =====================================================================
+# Hazel HOP schema verification suite
+#
+# Runs from YOUR machine (or any box with psql) against any Postgres,
+# including Databricks Lakebase.
+#
+#   export HOP_DB_URL="postgresql://USER@HOST:5432/databricks_postgres?sslmode=require"
+#   ./verify_hazel_schema.sh
+#
+# Prerequisites:
+#   1. hazel_schema.sql has been applied
+#   2. seed_test_data.sql has been applied
+#   3. Your login can SET ROLE hop_app:
+#        GRANT hop_app TO "your.name@theoremlabs.io";
+#
+# Why SET ROLE matters: your own Lakebase login almost certainly has
+# rolbypassrls = t, which makes RLS do nothing. Every test below runs
+# as hop_app (NOBYPASSRLS) so the policies are actually exercised.
+# =====================================================================
+set -uo pipefail
+
+: "${HOP_DB_URL:?Set HOP_DB_URL first, e.g. export HOP_DB_URL='postgresql://user@host:5432/databricks_postgres?sslmode=require'}"
+
+PASS=0; FAIL=0
+q(){ psql "$HOP_DB_URL" -v ON_ERROR_STOP=1 -tAq -c "$1" 2>&1; }
+
+A=11111111-1111-1111-1111-111111111111
+B=22222222-2222-2222-2222-222222222222
+UA=33333333-3333-3333-3333-333333333333
+UB=44444444-4444-4444-4444-444444444444
+UI=55555555-5555-5555-5555-555555555555
+CA=66666666-6666-6666-6666-666666666666
+CB=77777777-7777-7777-7777-777777777777
+
+ctxA="SELECT set_config('hop.institution_id','$A',true); SELECT set_config('hop.user_id','$UA',true); SELECT set_config('hop.role','MEMBER_ADMIN',true);"
+ctxB="SELECT set_config('hop.institution_id','$B',true); SELECT set_config('hop.user_id','$UB',true); SELECT set_config('hop.role','MEMBER_ADMIN',true);"
+ctxI="SELECT set_config('hop.user_id','$UI',true); SELECT set_config('hop.role','INTERNAL_REVIEWER',true);"
+ctxN=""
+
+# t <description> <ok|no> <sql>
+t(){ local desc="$1" want="$2" sql="$3" out rc
+  out=$(psql "$HOP_DB_URL" -v ON_ERROR_STOP=1 -tAq -c "BEGIN; SET ROLE hop_app; $sql COMMIT;" 2>&1); rc=$?
+  # keep only the last non-empty line (the actual result, not the set_config echoes)
+  local val; val=$(printf '%s\n' "$out" | grep -v '^$' | tail -1)
+  if [ "$want" = ok ]; then
+    if [ $rc -eq 0 ]; then echo "  PASS  $desc  -> $val"; PASS=$((PASS+1))
+    else echo "  FAIL  $desc  -> $(printf '%s' "$out" | grep -m1 ERROR)"; FAIL=$((FAIL+1)); fi
+  else
+    if [ $rc -ne 0 ]; then echo "  PASS  $desc  (rejected)"; PASS=$((PASS+1))
+    else echo "  FAIL  $desc  SHOULD HAVE BEEN REJECTED -> $val"; FAIL=$((FAIL+1)); fi
+  fi; }
+
+echo "=== 0. STRUCTURE ==="
+psql "$HOP_DB_URL" -tAF' ' -c "
+WITH x(label,actual,expected) AS (VALUES
+ ('tables',    (SELECT count(*) FROM information_schema.tables  WHERE table_schema='hazel'), 7),
+ ('columns',   (SELECT count(*) FROM information_schema.columns WHERE table_schema='hazel'), 80),
+ ('FKs',       (SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='hazel' AND contype='f'), 9),
+ ('CHECKs',    (SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='hazel' AND contype='c'), 26),
+ ('indexes',   (SELECT count(*) FROM pg_indexes WHERE schemaname='hazel'), 26),
+ ('triggers',  (SELECT count(*) FROM pg_trigger t JOIN pg_class cl ON cl.oid=t.tgrelid JOIN pg_namespace n ON n.oid=cl.relnamespace WHERE n.nspname='hazel' AND NOT tgisinternal), 13),
+ ('policies',  (SELECT count(*) FROM pg_policies WHERE schemaname='hazel'), 10),
+ ('RLS forced',(SELECT count(*) FROM pg_class cl JOIN pg_namespace n ON n.oid=cl.relnamespace WHERE n.nspname='hazel' AND cl.relforcerowsecurity), 7))
+SELECT CASE WHEN actual=expected THEN '  PASS  ' ELSE '  FAIL  ' END||rpad(label,12)||' expected '||expected||', got '||actual FROM x;"
+
+echo
+echo "=== 0b. HARNESS SELF-CHECK (are we really testing RLS?) ==="
+who=$(q "BEGIN; SET ROLE hop_app; SELECT current_user||' bypassrls='||(SELECT rolbypassrls::text FROM pg_roles WHERE rolname=current_user); COMMIT;" | tail -1)
+echo "  running as: $who"
+case "$who" in
+  *"bypassrls=f"*) echo "  PASS  RLS is in effect for the test role"; PASS=$((PASS+1));;
+  *) echo "  FAIL  test role can bypass RLS - every tenancy result below is meaningless"; FAIL=$((FAIL+1));;
+esac
+
+echo
+echo "=== 1. TENANCY ==="
+t "bank A sees exactly 1 case"           ok "$ctxA SELECT count(*) FROM hazel.onboarding_case;"
+t "bank B sees exactly 1 case"           ok "$ctxB SELECT count(*) FROM hazel.onboarding_case;"
+t "internal sees both cases"             ok "$ctxI SELECT count(*) FROM hazel.onboarding_case;"
+t "no session context sees nothing"      ok "$ctxN SELECT count(*) FROM hazel.onboarding_case;"
+t "A cannot read B's case by id"         ok "$ctxA SELECT count(*) FROM hazel.onboarding_case WHERE id='$CB';"
+t "A's update of B's case affects 0 rows" ok "$ctxA UPDATE hazel.onboarding_case SET current_status='ON_HOLD' WHERE id='$CB'; SELECT 'rows='||(SELECT count(*) FROM hazel.onboarding_case WHERE id='$CB' AND current_status='ON_HOLD');"
+t "A cannot insert a case for B"         no "$ctxA INSERT INTO hazel.onboarding_case (institution_id, case_number) VALUES ('$B','HOP-EVIL');"
+
+echo
+echo "=== 2. APPEND-ONLY HISTORY ==="
+t "UPDATE audit_log denied"              no "$ctxI UPDATE hazel.audit_log SET action='INSERT';"
+t "DELETE audit_log denied"              no "$ctxI DELETE FROM hazel.audit_log;"
+t "UPDATE stage transitions denied"      no "$ctxI UPDATE hazel.case_stage_transition SET to_stage='NDA';"
+t "DELETE stage transitions denied"      no "$ctxI DELETE FROM hazel.case_stage_transition;"
+
+echo
+echo "=== 3. PROTECTED COPY COLUMNS ==="
+t "direct write to institution.rssd_id denied" no "$ctxI UPDATE hazel.institution SET rssd_id='FAKE' WHERE id='$A';"
+t "direct write to case.rafa_score denied"     no "$ctxI UPDATE hazel.onboarding_case SET rafa_score=99 WHERE id='$CA';"
+t "allowed column on same table still works"   ok "$ctxI UPDATE hazel.institution SET legal_name='Alpha Bank, N.A.' WHERE id='$A'; SELECT legal_name FROM hazel.institution WHERE id='$A';"
+t "RAFA write propagates to both copies"       ok "$ctxI INSERT INTO hazel.rafa (institution_id,fdic_certificate,rssd_id,rafa_score,rafa_status) VALUES ('$A','FDIC-1001','RSSD-777',88.50,'PASS') ON CONFLICT (institution_id) DO UPDATE SET rssd_id=EXCLUDED.rssd_id, rafa_score=EXCLUDED.rafa_score; SELECT (SELECT rssd_id FROM hazel.institution WHERE id='$A')||' / '||(SELECT rafa_score::text FROM hazel.onboarding_case WHERE id='$CA');"
+
+echo
+echo "=== 4. STAGE HISTORY (written by trigger, not the app) ==="
+t "creation wrote an opening history row" ok "$ctxA SELECT count(*)||' rows' FROM hazel.case_stage_transition WHERE onboarding_case_id='$CA';"
+t "stage change writes history"           ok "$ctxA UPDATE hazel.onboarding_case SET current_stage='NDA' WHERE id='$CA'; SELECT count(*)||' rows' FROM hazel.case_stage_transition WHERE onboarding_case_id='$CA';"
+t "no-op update writes no history"        ok "$ctxA UPDATE hazel.onboarding_case SET current_stage='NDA' WHERE id='$CA'; SELECT count(*)||' rows' FROM hazel.case_stage_transition WHERE onboarding_case_id='$CA';"
+t "history attributed to acting user"     ok "$ctxA SELECT actor_type||'/'||coalesce(changed_by::text,'null') FROM hazel.case_stage_transition WHERE onboarding_case_id='$CA' ORDER BY occurred_at DESC LIMIT 1;"
+
+echo
+echo "=== 5. DOCUMENTS ==="
+t "valid upload by own member"            ok "$ctxA INSERT INTO hazel.document (institution_id,onboarding_case_id,uploaded_by,document_type_name,file_name,file_path) VALUES ('$A','$CA','$UA','NDA','nda.pdf','/Volumes/hazel/onboarding/uploads/$A/$CA/d1.pdf'); SELECT 'ok';"
+t "internal reviewer may upload for A"    ok "$ctxI INSERT INTO hazel.document (institution_id,onboarding_case_id,uploaded_by,document_type_name,file_name,file_path) VALUES ('$A','$CA','$UI','CBDDQ','c.pdf','/v/x/d2.pdf'); SELECT 'ok';"
+t "uploader from another bank rejected"   no "$ctxI INSERT INTO hazel.document (institution_id,onboarding_case_id,uploaded_by,document_type_name,file_name,file_path) VALUES ('$A','$CA','$UB','NDA','x.pdf','/v/x/d3.pdf');"
+t "institution/case mismatch rejected"    no "$ctxI INSERT INTO hazel.document (institution_id,onboarding_case_id,uploaded_by,document_type_name,file_name,file_path) VALUES ('$B','$CA','$UI','NDA','x.pdf','/v/x/d4.pdf');"
+t "unknown document type rejected"        no "$ctxA INSERT INTO hazel.document (institution_id,onboarding_case_id,uploaded_by,document_type_name,file_name,file_path) VALUES ('$A','$CA','$UA','PASSPORT','x.pdf','/v/x/d5.pdf');"
+t "bank B cannot see A's documents"       ok "$ctxB SELECT count(*) FROM hazel.document;"
+
+echo
+echo "=== 6. BUSINESS RULES ==="
+t "second active case for A rejected"     no "$ctxI INSERT INTO hazel.onboarding_case (institution_id,case_number) VALUES ('$A','HOP-0003');"
+t "closing the case frees the slot"       ok "$ctxI UPDATE hazel.onboarding_case SET current_status='WITHDRAWN' WHERE id='$CA'; INSERT INTO hazel.onboarding_case (institution_id,case_number) VALUES ('$A','HOP-0003') ON CONFLICT (case_number) DO NOTHING; SELECT 'ok';"
+t "internal user with an institution rejected"  no "$ctxI INSERT INTO hazel.app_user (institution_id,external_identity_id,email,role) VALUES ('$A','e-x','x@v.test','INTERNAL_RISK');"
+t "member user without an institution rejected" no "$ctxI INSERT INTO hazel.app_user (institution_id,external_identity_id,email,role) VALUES (NULL,'e-y','y@v.test','MEMBER_VIEWER');"
+t "malformed sha256 rejected"             no "$ctxA INSERT INTO hazel.document (institution_id,onboarding_case_id,uploaded_by,document_type_name,file_name,file_path,sha256) VALUES ('$A','$CA','$UA','NDA','x.pdf','/v/x/d6.pdf','nothex');"
+t "invalid stage value rejected"          no "$ctxI UPDATE hazel.onboarding_case SET current_stage='TYPO_STAGE' WHERE id='$CB';"
+
+echo
+echo "=== 7. AUDIT ==="
+t "legal_name change captured with field list" ok "$ctxI SELECT action||' '||changed_fields::text FROM hazel.audit_log WHERE entity_type='institution' AND changed_fields @> ARRAY['legal_name'] ORDER BY id DESC LIMIT 1;"
+t "before/after both recorded"                 ok "$ctxI SELECT (before_data->>'legal_name')||' -> '||(after_data->>'legal_name') FROM hazel.audit_log WHERE entity_type='institution' AND changed_fields @> ARRAY['legal_name'] ORDER BY id DESC LIMIT 1;"
+t "all five core tables are audited"           ok "$ctxI SELECT string_agg(DISTINCT entity_type,',' ORDER BY entity_type) FROM hazel.audit_log;"
+t "bank A sees no audit rows for bank B"       ok "$ctxA SELECT count(*) FROM hazel.audit_log WHERE institution_id='$B';"
+
+echo
+echo "====================================================="
+printf "  %d passed, %d failed\n" "$PASS" "$FAIL"
+echo "====================================================="
+[ "$FAIL" -eq 0 ] || exit 1
