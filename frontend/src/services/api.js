@@ -12,7 +12,9 @@ async function request(path, options = {}) {
   if (!response.ok) {
     const detail = payload.detail
     const message = typeof detail === 'string' ? detail : detail?.message || 'Something went wrong.'
-    throw new Error(message)
+    const error = new Error(message)
+    error.status = response.status
+    throw error
   }
   return payload
 }
