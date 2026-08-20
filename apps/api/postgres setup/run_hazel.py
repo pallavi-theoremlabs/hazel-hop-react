@@ -111,11 +111,16 @@ CTX_I = (f"SELECT set_config('hop.user_id','{UI}',true);"
 CTX_N = ""
  
 EXPECTED = [
-    ("tables",     7,  "SELECT count(*) FROM information_schema.tables WHERE table_schema='hazel'"),
-    ("columns",    80, "SELECT count(*) FROM information_schema.columns WHERE table_schema='hazel'"),
+    # hazel.schema_migrations is excluded throughout: it was created by an accidental
+    # `migrate.py --status` run against the retired migrations model (since deleted),
+    # is not
+    # part of this schema, and is the one table with no RLS. fingerprint.py excludes it
+    # for the same reason. Counting it would make every number here wrong by one.
+    ("tables",     7,  "SELECT count(*) FROM information_schema.tables WHERE table_schema='hazel' AND table_name <> 'schema_migrations'"),
+    ("columns",    80, "SELECT count(*) FROM information_schema.columns WHERE table_schema='hazel' AND table_name <> 'schema_migrations'"),
     ("FKs",        9,  "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='hazel' AND contype='f'"),
     ("CHECKs",     26, "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='hazel' AND contype='c'"),
-    ("indexes",    26, "SELECT count(*) FROM pg_indexes WHERE schemaname='hazel'"),
+    ("indexes",    26, "SELECT count(*) FROM pg_indexes WHERE schemaname='hazel' AND tablename <> 'schema_migrations'"),
     ("triggers",   13, "SELECT count(*) FROM pg_trigger t JOIN pg_class cl ON cl.oid=t.tgrelid JOIN pg_namespace n ON n.oid=cl.relnamespace WHERE n.nspname='hazel' AND NOT tgisinternal"),
     ("policies",   10, "SELECT count(*) FROM pg_policies WHERE schemaname='hazel'"),
     ("RLS forced", 7,  "SELECT count(*) FROM pg_class cl JOIN pg_namespace n ON n.oid=cl.relnamespace WHERE n.nspname='hazel' AND cl.relforcerowsecurity"),
@@ -149,7 +154,7 @@ TESTS = [
         ("creation wrote an opening row",           "ok", CTX_A + f"SELECT count(*) FROM hazel.case_stage_transition WHERE onboarding_case_id='{CA}';"),
         ("stage change writes history",             "ok", CTX_A + f"UPDATE hazel.onboarding_case SET current_stage='NDA' WHERE id='{CA}'; SELECT count(*) FROM hazel.case_stage_transition WHERE onboarding_case_id='{CA}';"),
         ("no-op update writes no history",          "ok", CTX_A + f"UPDATE hazel.onboarding_case SET current_stage='NDA' WHERE id='{CA}'; SELECT count(*) FROM hazel.case_stage_transition WHERE onboarding_case_id='{CA}';"),
-        ("history attributed to acting user",       "ok", CTX_A + f"UPDATE hazel.onboarding_case SET current_stage='DUE_DILIGENCE' WHERE id='{CA}'; SELECT actor_type||'/'||coalesce(changed_by::text,'null') FROM hazel.case_stage_transition WHERE onboarding_case_id='{CA}' ORDER BY occurred_at DESC LIMIT 1;"),
+        ("history attributed to acting user",       "ok", CTX_A + f"UPDATE hazel.onboarding_case SET current_stage='ELIGIBILITY_SCREENING' WHERE id='{CA}'; SELECT actor_type||'/'||coalesce(changed_by::text,'null') FROM hazel.case_stage_transition WHERE onboarding_case_id='{CA}' ORDER BY occurred_at DESC LIMIT 1;"),
     ]),
     ("DOCUMENTS", [
         ("valid upload by own member",              "ok", CTX_A + f"INSERT INTO hazel.document ({D}) VALUES ('{A}','{CA}','{UA}','NDA','nda.pdf','/Volumes/hazel/onboarding/uploads/{A}/{CA}/d1.pdf'); SELECT 'ok';"),
@@ -161,9 +166,9 @@ TESTS = [
     ]),
     ("BUSINESS RULES", [
         ("second active case for A rejected",       "no", CTX_I + f"INSERT INTO hazel.onboarding_case (institution_id,case_number) VALUES ('{A}','HOP-0003');"),
-        ("closing the case frees the slot",         "ok", CTX_I + f"UPDATE hazel.onboarding_case SET current_status='WITHDRAWN' WHERE id='{CA}'; INSERT INTO hazel.onboarding_case (institution_id,case_number) VALUES ('{A}','HOP-0003') ON CONFLICT (case_number) DO NOTHING; SELECT 'ok';"),
-        ("internal user with institution rejected", "no", CTX_I + f"INSERT INTO hazel.app_user (institution_id,external_identity_id,email,role) VALUES ('{A}','e-x','x@v.test','INTERNAL_RISK');"),
-        ("member user without institution rejected","no", CTX_I + "INSERT INTO hazel.app_user (institution_id,external_identity_id,email,role) VALUES (NULL,'e-y','y@v.test','MEMBER_VIEWER');"),
+        ("closing the case frees the slot",         "ok", CTX_I + f"UPDATE hazel.onboarding_case SET current_status='COMPLETED' WHERE id='{CA}'; INSERT INTO hazel.onboarding_case (institution_id,case_number) VALUES ('{A}','HOP-0003') ON CONFLICT (case_number) DO NOTHING; SELECT 'ok';"),
+        ("internal user with institution rejected", "no", CTX_I + f"INSERT INTO hazel.\"user\" (institution_id,external_identity_id,email,role) VALUES ('{A}','e-x','x@v.test','INTERNAL_RISK');"),
+        ("member user without institution rejected","no", CTX_I + "INSERT INTO hazel.\"user\" (institution_id,external_identity_id,email,role) VALUES (NULL,'e-y','y@v.test','MEMBER_VIEWER');"),
         ("malformed sha256 rejected",               "no", CTX_A + f"INSERT INTO hazel.document ({D},sha256) VALUES ('{A}','{CA}','{UA}','NDA','x.pdf','/v/x/d6.pdf','nothex');"),
         ("invalid stage value rejected",            "no", CTX_I + f"UPDATE hazel.onboarding_case SET current_stage='TYPO_STAGE' WHERE id='{CB}';"),
     ]),
@@ -179,7 +184,7 @@ TESTS = [
                ON CONFLICT (institution_id) DO UPDATE SET rafa_score=EXCLUDED.rafa_score;
              UPDATE hazel.onboarding_case SET current_stage='NDA' WHERE id='{CA}';
              INSERT INTO hazel.document ({D}) VALUES ('{A}','{CA}','{UI}','NDA','a.pdf','/v/a.pdf');
-             INSERT INTO hazel.app_user (institution_id,external_identity_id,email,role)
+             INSERT INTO hazel."user" (institution_id,external_identity_id,email,role)
                VALUES ('{A}','probe-1','probe@alpha.test','MEMBER_VIEWER');
              SELECT string_agg(DISTINCT entity_type,',' ORDER BY entity_type) FROM hazel.audit_log;"""),
         ("A sees no audit rows for B",              "ok", CTX_A + f"SELECT count(*) FROM hazel.audit_log WHERE institution_id='{B}';"),
