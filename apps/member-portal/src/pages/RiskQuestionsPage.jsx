@@ -27,6 +27,7 @@ export default function RiskQuestionsPage() {
   const [filter, setFilter] = useState('all')
   const [busy, setBusy] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
   const [pendingSaves, setPendingSaves] = useState(0)
   const [questionSaveStates, setQuestionSaveStates] = useState({})
   const [error, setError] = useState('')
@@ -176,7 +177,7 @@ export default function RiskQuestionsPage() {
       await submitRiskQuestions(caseId)
       await refreshCase()
       navigate(`/case/${caseId}/review`)
-    } catch (err) { setError(err.message) } finally { setSubmitting(false) }
+    } catch (err) { setError(err.message); setSubmitDialogOpen(false) } finally { setSubmitting(false) }
   }
 
   if (!result && !error) return <QuestionnaireState title={copy('loadingTitle')} description={copy('loadingDescription')} badge={t('common:status.loading')} />
@@ -200,12 +201,18 @@ export default function RiskQuestionsPage() {
         })}</div> : <div className="questionnaire-filter-empty"><p>{copy('empty.filtered')}</p><Button variant="quiet" onClick={() => setFilter('all')}>{t('common:actions.clearFilter')}</Button></div>}
         <div className="questionnaire-section-actions">
           <Button variant="secondary" disabled={currentSection === 0} onClick={() => setCurrentSection((index) => Math.max(0, index - 1))}>{copy('section.previous')}</Button>
-          {currentSection < sections.length - 1 ? <Button onClick={() => setCurrentSection((index) => Math.min(sections.length - 1, index + 1))}>{copy('section.next')}</Button> : <Button disabled={counts.remaining > 0 || submitting || pendingSaves > 0} onClick={submitQuestionnaire}>{submitting ? copy('submit.submitting') : pendingSaves > 0 ? copy('submit.saving') : copy('submit.action')}</Button>}
+          {currentSection < sections.length - 1 ? <Button onClick={() => setCurrentSection((index) => Math.min(sections.length - 1, index + 1))}>{copy('section.next')}</Button> : <Button disabled={counts.remaining > 0 || submitting || pendingSaves > 0} onClick={() => setSubmitDialogOpen(true)}>{pendingSaves > 0 ? copy('submit.saving') : copy('submit.action')}</Button>}
         </div>
         {currentSection === sections.length - 1 && <section className={`risk-submit-summary ${counts.remaining === 0 ? 'ready' : ''}`}><h2>{counts.remaining === 0 ? copy('submit.title') : copy('progress.questionnaire')}</h2><p>{counts.remaining === 0 ? copy('submit.description', { count: counts.confirmed }) : copy('progress.remaining', { count: counts.remaining })}</p></section>}
       </main>
     </div>}
     {error && <div className="alert danger">{error}</div>}
+    {submitDialogOpen && <div className="modal-backdrop" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-submit-title">
+      <h2 id="risk-submit-title">{copy('submit.confirmTitle')}</h2>
+      <p>{copy('submit.confirmDescription')}</p>
+      <p className="sub">{copy('submit.confirmNext')}</p>
+      {submitting ? <div className="loading-row"><span className="spinner" aria-hidden="true" /><strong>{copy('submit.submitting')}</strong></div> : <div className="actions"><Button variant="secondary" onClick={() => setSubmitDialogOpen(false)}>{t('common:actions.back')}</Button><Button onClick={submitQuestionnaire}>{copy('submit.confirmAction')}</Button></div>}
+    </section></div>}
   </>
 }
 

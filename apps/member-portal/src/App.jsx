@@ -12,6 +12,9 @@ import RiskQuestionsPage from './pages/RiskQuestionsPage'
 import OverviewPage from './pages/OverviewPage'
 import SubmitInterestPage from './pages/SubmitInterestPage'
 import CreateAccountPage from './pages/CreateAccountPage'
+import SignInPage from './pages/SignInPage'
+import EsignPage from './pages/EsignPage'
+import AccountOpeningPage from './pages/AccountOpeningPage'
 import { getCase } from './services/api'
 
 const CaseContext = createContext(null)
@@ -42,7 +45,9 @@ function CaseApp() {
           <Route path="documents" element={<Guard stage="DOCUMENTS"><DocumentsPage /></Guard>} />
           <Route path="risk-questions" element={caseData.current_stage === 'HAZEL_REVIEW' ? <Navigate to="../review" replace /> : <Guard stage="RISK_QUESTIONS"><RiskQuestionsPage /></Guard>} />
           <Route path="review" element={<Guard stage="HAZEL_REVIEW"><HazelReviewPage /></Guard>} />
-          <Route path="*" element={<Navigate to="overview" replace />} />
+          <Route path="esign" element={<Guard stage="HAZEL_REVIEW"><EsignPage /></Guard>} />
+          <Route path="account-opening" element={<Guard stage="HAZEL_REVIEW"><AccountOpeningPage /></Guard>} />
+          <Route path="*" element={<Navigate to={`/case/${caseId}/overview`} replace />} />
         </Routes>
       </AppShell>
     </CaseContext.Provider>
@@ -60,6 +65,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/create-account" element={<CreateAccountPage />} />
+      <Route path="/sign-in" element={<SignInPage />} />
       <Route path="/submit-interest" element={<SubmitInterestPage />} />
       <Route path="/case/:caseId/*" element={<CaseApp />} />
       <Route path="*" element={<Navigate to="/submit-interest" replace />} />

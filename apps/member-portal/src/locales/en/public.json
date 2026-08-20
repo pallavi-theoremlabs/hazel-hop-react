@@ -1,4 +1,19 @@
 {
+  "signIn": {
+    "title": "Sign in to Hazel",
+    "description": "Use the registered work email and password for your existing Hazel account.",
+    "email": "Registered work email",
+    "password": "Password",
+    "forgot": "Forgot password?",
+    "action": "Sign in",
+    "back": "Back",
+    "show": "Show",
+    "hide": "Hide",
+    "unavailableTitle": "Sign in is not connected yet.",
+    "unavailable": "Microsoft External ID authentication is not enabled for this frontend-only prototype-parity page.",
+    "resetUnavailable": "Password reset will be available when Microsoft External ID authentication is integrated.",
+    "integrationNote": "Authentication is unavailable in this frontend-only review state; no credentials are submitted."
+  },
   "createAccount": {
     "title": "Create your Hazel account",
     "description": "Create a password to securely access the Hazel Network.",
