@@ -11,9 +11,9 @@ dist/
 __pycache__/
 *.py[cod]
 *.db
-backend/uploads/*
-!backend/uploads/.gitkeep
-backend/.env
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep
+apps/api/.env
 frontend/.env
 
 .gstack/
