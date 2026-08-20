@@ -2,7 +2,8 @@
 
 Replaces the file-backed sqlite3 connection this module used to open per request,
 and the inline DDL that used to run on every boot. Schema now lives in
-backend/migrations/ and is applied by backend/migrate.py.
+postgres setup/hazel_schema.sql and is applied out of band. apps/api/migrations/
+builds a different, retired data model and is not what this connects to.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from sqlalchemy import create_engine, event
 
-# Imported for its side effect: loads backend/.env with override=False, so
+# Imported for its side effect: loads apps/api/.env with override=False, so
 # injected App variables always win over anything in the file.
 from app import config  # noqa: F401
 from app.lakebase import mint_password, resolve_settings
@@ -154,7 +155,7 @@ def _settings():
 #
 # Verified against the real pooler host. So `connect_args` is not merely unreliable
 # through a pooler, it makes connecting impossible — which is why search_path is
-# established per transaction in connection() instead, alongside app.org_id and in
+# established per transaction in connection() instead, alongside the hop.* GUCs and in
 # the same round trip. connect_args stays on for direct endpoints, where it is
 # legal and means a connection is in the right schema even outside connection().
 POOLER_HOST_MARKER = "-pooler."
@@ -304,13 +305,14 @@ def row_dict(row):
 def init_db() -> None:
     """Assert the database is usable. It no longer creates anything.
 
-    Schema is applied out of band by backend/migrate.py. A forgotten migration
+    Schema is applied out of band from postgres setup/hazel_schema.sql — not by
+    apps/api/migrate.py, which builds a retired model. A forgotten migration
     used to be impossible (the DDL ran on every boot) and is now a real failure
     mode, so it is checked here instead of surfacing as a missing-relation error
     on the first request.
     """
     # The schema in postgres setup/hazel_schema.sql, which is authoritative and
-    # final. Deliberately not the set backend/migrations/ builds — that directory
+    # final. Deliberately not the set apps/api/migrations/ builds — that directory
     # describes a different data model and is retired; see the note in init_db's
     # docstring.
     #
@@ -348,7 +350,7 @@ def init_db() -> None:
         if missing:
             raise RuntimeError(
                 f"Lakebase schema is not current; missing tables: {sorted(missing)}. "
-                "Apply backend/postgres setup/hazel_schema.sql."
+                "Apply apps/api/postgres setup/hazel_schema.sql."
             )
 
         # Prove the role took effect. This is the check that matters most, because

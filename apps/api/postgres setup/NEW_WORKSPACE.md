@@ -17,7 +17,7 @@ evidence of what was copied.
 | `source_fingerprint.json` | Canonical structure of the source, for the parity diff in step 5. |
 
 `hazel.schema_migrations` is deliberately excluded. It was created by an
-accidental `migrate.py --status` run against the retired `backend/migrations/`
+accidental `migrate.py --status` run against the retired `apps/api/migrations/`
 model and is not part of this schema.
 
 ---

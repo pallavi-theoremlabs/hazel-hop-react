@@ -24,9 +24,10 @@ this module:
   org id from a caller it has just authenticated, and validates the shape.
 
 Nothing here weakens the database-side guarantee. Every tenant table is FORCE ROW
-LEVEL SECURITY (migration 002) keyed on the app.org_id GUC, so a missing or wrong
-org yields zero rows rather than another tenant's. That is the backstop; this is
-the part that makes the common path correct rather than merely safe.
+LEVEL SECURITY (postgres setup/hazel_schema.sql) keyed on the hop.institution_id
+GUC, so a missing or wrong institution yields zero rows rather than another
+tenant's. That is the backstop; this is the part that makes the common path
+correct rather than merely safe.
 """
 
 from __future__ import annotations

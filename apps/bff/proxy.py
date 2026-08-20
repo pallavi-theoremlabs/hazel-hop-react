@@ -23,7 +23,7 @@ is not, and FRONTEND_ORIGIN below has to name the SPA's origin so the preflight
 is answered. The App itself still needs no CORS either way, because this hop is
 server-to-server and carries no Origin header.
 
-This mirrors the token handling already in backend/app/services/rafa.py, which
+This mirrors the token handling already in apps/api/app/services/rafa.py, which
 calls a *different* Databricks App the same way.
 
 Runs on any host that can hold a secret and reach the workspace — currently Render.

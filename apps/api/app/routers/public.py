@@ -106,7 +106,7 @@ async def submit_interest(payload: SubmitInterestCreate):
     # request tenancy here — /api/public is mounted with require_proxy alone.
     #
     # WARNING: every statement in this block still names tables from the retired
-    # backend/migrations/ model — organizations, institutions, rafa_screenings,
+    # apps/api/migrations/ model — organizations, institutions, rafa_screenings,
     # onboarding_cases, express_interest_submissions, institution_profiles,
     # due_diligence. None exist in the final schema, so this endpoint fails on the
     # first INSERT with UndefinedTable. Fixing the call signature below stops it
@@ -233,8 +233,8 @@ async def submit_interest(payload: SubmitInterestCreate):
         "case_id": case_id,
         # The tenant this inquiry now belongs to. Returned so the Azure BFF can
         # bind the authenticated end user to it — every subsequent /api/cases call
-        # sends it back as X-Hazel-Org-Id, and it is the only way the case becomes
-        # reachable again, since RLS scopes every read to it.
+        # sends it back as X-Hazel-Institution-Id, and it is the only way the case
+        # becomes reachable again, since RLS scopes every read to it.
         "org_id": org_id,
         "inquiry_reference": inquiry_reference,
         "institution_id": institution_id,
