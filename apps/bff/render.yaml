@@ -43,7 +43,7 @@ services:
       - key: DATABRICKS_HOST
         value: https://dbc-6400d9ac-e0d7.cloud.databricks.com
       - key: DATABRICKS_APP_URL
-        value: https://hazel-hop-demo-7474650915199601.aws.databricksapps.com
+        value: https://hazel-api-7474644508009163.aws.databricksapps.com
 
       # The SPA's origin: scheme and host, no path and no trailing slash, compared
       # verbatim against the browser's Origin header.
