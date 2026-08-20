@@ -6,15 +6,15 @@ dist/
 # what makes this work: git will not re-include a file whose parent directory is
 # excluded, so `!frontend/dist/**` alone would do nothing. node_modules/ stays
 # ignored above and is never traversed, so no dependency dist/ folders leak in.
-!frontend/dist/
+!apps/member-portal/dist/
 .venv/
 __pycache__/
 *.py[cod]
 *.db
-backend/uploads/*
-!backend/uploads/.gitkeep
-backend/.env
-frontend/.env
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep
+apps/api/.env
+apps/member-portal/.env
 
 .gstack/
 
