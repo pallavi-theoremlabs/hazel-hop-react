@@ -1,6 +1,6 @@
 # Databricks Apps configuration for hazel-hop-demo.
 #
-# Entry point: `--app-dir backend` puts the backend package on sys.path so
+# Entry point: `--app-dir apps/api` puts the backend package on sys.path so
 # `app.main:app` resolves. There is deliberately no root main.py shim — two entry
 # mechanisms that disagree fail as an ImportError at startup that reads like a
 # packaging problem. This is the only one.

@@ -7,7 +7,7 @@
 --   SELECT set_config('hop.institution_id', $1, true);
 --   SELECT set_config('hop.user_id',        $2, true);
 --   SELECT set_config('hop.role',           $3, true);
--- `hop.role` carries either an app_user.role value or the literal
+-- `hop.role` carries either a hazel."user".role value or the literal
 -- 'SYSTEM' for anonymous intake (public inquiry form).
 -- =====================================================================
 
@@ -73,10 +73,16 @@ CREATE TABLE hazel.institution (
 COMMENT ON COLUMN hazel.institution.rssd_id IS
   'Maintained copy of hazel.rafa.rssd_id. Written only by fn_propagate_rafa; hop_app has no UPDATE privilege on this column.';
 
--- 2.2 app_user ---------------------------------------------------------
--- Named app_user, not "user": bare `user` is a reserved word, so an
--- unqualified `FROM user` is a syntax error and needs permanent quoting.
-CREATE TABLE hazel.app_user (
+-- 2.2 user -------------------------------------------------------------
+-- The deployed table is hazel."user", so every reference below is quoted.
+-- Bare `user` is a reserved word: an unqualified `FROM user` is a syntax
+-- error, which makes the quoting permanent rather than stylistic.
+--
+-- The live primary key index is named app_user_pkey, because the table was
+-- created under that name and renamed; Postgres keeps index names across a
+-- rename. A fresh run of this file names it user_pkey instead. That differs
+-- from the deployed database in name only and has no functional effect.
+CREATE TABLE hazel."user" (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   institution_id       uuid REFERENCES hazel.institution(id) ON DELETE RESTRICT,
   external_identity_id text NOT NULL,       -- Microsoft Entra object id
@@ -130,21 +136,23 @@ CREATE TABLE hazel.onboarding_case (
   coverbase_assessment_status text NOT NULL DEFAULT 'NOT_STARTED',
   coverbase_sync_status       text NOT NULL DEFAULT 'PENDING',
   inherent_risk_score         numeric(5,2),
-  rafa_score                  numeric(5,2),   -- MAINTAINED COPY from hazel.rafa
+  rafa_score                  integer,        -- MAINTAINED COPY from hazel.rafa.
+                                              -- integer here, numeric(5,2) there;
+                                              -- fn_propagate_rafa rounds on copy.
   assessment_outcome          text,
   coverbase_last_synced_at    timestamptz,
   created_at                  timestamptz NOT NULL DEFAULT now(),
-  completed_at                timestamptz,
+  completed_at                timestamptz DEFAULT now(),
   updated_at                  timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT uq_case_number UNIQUE (case_number),
   -- target for the composite foreign keys on document and transitions
   CONSTRAINT uq_case_id_institution UNIQUE (id, institution_id),
   CONSTRAINT ck_case_stage CHECK (current_stage IN
-    ('INQUIRY','ELIGIBILITY_SCREENING','NDA','DUE_DILIGENCE',
+    ('INQUIRY','ELIGIBILITY_SCREENING','NDA',
      'RISK_ASSESSMENT','VANTAGE_REVIEW','ACCOUNT_OPENING','COMPLETED')),
   CONSTRAINT ck_case_status CHECK (current_status IN
-    ('IN_PROGRESS','AWAITING_MEMBER','AWAITING_VANTAGE','AWAITING_VENDOR',
-     'ON_HOLD','COMPLETED','WITHDRAWN','DECLINED')),
+    ('IN_PROGRESS','AWAITING_MEMBER','AWAITING_VANTAGE',
+     'ON_HOLD','COMPLETED','DECLINED')),
   CONSTRAINT ck_case_decision CHECK (decision_status IN
     ('PENDING','APPROVED','DECLINED','MORE_INFO_REQUIRED')),
   CONSTRAINT ck_cb_session_status CHECK (coverbase_session_status IN
@@ -175,7 +183,7 @@ CREATE TABLE hazel.document (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   institution_id        uuid NOT NULL,
   onboarding_case_id    uuid NOT NULL,
-  uploaded_by           uuid NOT NULL REFERENCES hazel.app_user(id) ON DELETE RESTRICT,
+  uploaded_by           uuid NOT NULL REFERENCES hazel."user"(id) ON DELETE RESTRICT,
   document_type_name    text NOT NULL,
   file_name             text NOT NULL,
   file_path             text NOT NULL,
@@ -195,7 +203,7 @@ CREATE TABLE hazel.document (
   CONSTRAINT ck_document_sync CHECK (sync_status IN
     ('PENDING','IN_PROGRESS','SYNCED','FAILED','RETRYING','NOT_APPLICABLE')),
   CONSTRAINT ck_document_review CHECK (review_status IN
-    ('PENDING_REVIEW','IN_REVIEW','ACCEPTED','REJECTED','SUPERSEDED')),
+    ('PENDING_REVIEW','IN_REVIEW','ACCEPTED','REJECTED')),
   CONSTRAINT ck_document_size CHECK (file_size_bytes IS NULL OR file_size_bytes > 0),
   CONSTRAINT ck_document_sha CHECK (sha256 IS NULL OR sha256 ~ '^[0-9a-f]{64}$')
 );
@@ -212,7 +220,7 @@ CREATE TABLE hazel.case_stage_transition (
   from_status        text,
   to_status          text NOT NULL,
   actor_type         text NOT NULL,
-  changed_by         uuid REFERENCES hazel.app_user(id) ON DELETE RESTRICT,
+  changed_by         uuid REFERENCES hazel."user"(id) ON DELETE RESTRICT,
   reason             text,
   occurred_at        timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_transition_case FOREIGN KEY (onboarding_case_id, institution_id)
@@ -232,7 +240,7 @@ CREATE TABLE hazel.audit_log (
   entity_type    text NOT NULL,
   entity_id      uuid NOT NULL,
   action         text NOT NULL,
-  changed_by     uuid REFERENCES hazel.app_user(id) ON DELETE RESTRICT,
+  changed_by     uuid REFERENCES hazel."user"(id) ON DELETE RESTRICT,
   actor_type     text NOT NULL,
   changed_fields text[],
   before_data    jsonb,
@@ -249,7 +257,7 @@ CREATE TABLE hazel.audit_log (
 CREATE UNIQUE INDEX ux_institution_fdic ON hazel.institution (fdic_certificate)
   WHERE fdic_certificate IS NOT NULL;
 
-CREATE INDEX ix_user_institution     ON hazel.app_user (institution_id);
+CREATE INDEX ix_user_institution     ON hazel."user" (institution_id);
 CREATE INDEX ix_case_institution     ON hazel.onboarding_case (institution_id);
 CREATE INDEX ix_case_stage_status    ON hazel.onboarding_case (current_stage, current_status);
 CREATE INDEX ix_document_institution ON hazel.document (institution_id);
@@ -382,7 +390,7 @@ DECLARE
   v_role text;
 BEGIN
   SELECT institution_id, role INTO v_inst, v_role
-    FROM hazel.app_user WHERE id = NEW.uploaded_by;
+    FROM hazel."user" WHERE id = NEW.uploaded_by;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'uploader % does not exist', NEW.uploaded_by;
@@ -407,7 +415,7 @@ $fn$;
 -- ---------------------------------------------------------------------
 CREATE TRIGGER trg_touch BEFORE UPDATE ON hazel.institution
   FOR EACH ROW EXECUTE FUNCTION hazel.fn_touch_updated_at();
-CREATE TRIGGER trg_touch BEFORE UPDATE ON hazel.app_user
+CREATE TRIGGER trg_touch BEFORE UPDATE ON hazel."user"
   FOR EACH ROW EXECUTE FUNCTION hazel.fn_touch_updated_at();
 CREATE TRIGGER trg_touch BEFORE UPDATE ON hazel.rafa
   FOR EACH ROW EXECUTE FUNCTION hazel.fn_touch_updated_at();
@@ -427,7 +435,7 @@ CREATE TRIGGER trg_uploader BEFORE INSERT OR UPDATE ON hazel.document
 
 CREATE TRIGGER trg_audit AFTER INSERT OR UPDATE OR DELETE ON hazel.institution
   FOR EACH ROW EXECUTE FUNCTION hazel.fn_audit();
-CREATE TRIGGER trg_audit AFTER INSERT OR UPDATE OR DELETE ON hazel.app_user
+CREATE TRIGGER trg_audit AFTER INSERT OR UPDATE OR DELETE ON hazel."user"
   FOR EACH ROW EXECUTE FUNCTION hazel.fn_audit();
 CREATE TRIGGER trg_audit AFTER INSERT OR UPDATE OR DELETE ON hazel.rafa
   FOR EACH ROW EXECUTE FUNCTION hazel.fn_audit();
@@ -451,7 +459,7 @@ GRANT UPDATE (legal_name, fdic_certificate, institution_type, status,
               registration_contact_email, updated_at)
   ON hazel.institution TO hop_app;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON hazel.app_user TO hop_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON hazel."user"   TO hop_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON hazel.rafa     TO hop_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON hazel.document TO hop_app;
 
@@ -476,8 +484,8 @@ GRANT SELECT, INSERT ON hazel.audit_log             TO hop_app;
 -- ---------------------------------------------------------------------
 ALTER TABLE hazel.institution           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hazel.institution           FORCE  ROW LEVEL SECURITY;
-ALTER TABLE hazel.app_user              ENABLE ROW LEVEL SECURITY;
-ALTER TABLE hazel.app_user              FORCE  ROW LEVEL SECURITY;
+ALTER TABLE hazel."user"                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hazel."user"                FORCE  ROW LEVEL SECURITY;
 ALTER TABLE hazel.rafa                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hazel.rafa                  FORCE  ROW LEVEL SECURITY;
 ALTER TABLE hazel.onboarding_case       ENABLE ROW LEVEL SECURITY;
@@ -494,7 +502,7 @@ CREATE POLICY p_tenant ON hazel.institution
   USING      (hazel.is_internal() OR id = hazel.current_institution())
   WITH CHECK (hazel.is_internal() OR id = hazel.current_institution());
 
-CREATE POLICY p_tenant ON hazel.app_user
+CREATE POLICY p_tenant ON hazel."user"
   USING      (hazel.is_internal() OR institution_id = hazel.current_institution())
   WITH CHECK (hazel.is_internal() OR institution_id = hazel.current_institution());
 
@@ -524,5 +532,5 @@ CREATE POLICY p_tenant ON hazel.audit_log
 -- first user and a case before anyone has logged in.  Permissive policies
 -- are OR'd, so this adds an INSERT-only path for hop.role = 'SYSTEM'.
 CREATE POLICY p_intake ON hazel.institution     FOR INSERT WITH CHECK (hazel.is_system());
-CREATE POLICY p_intake ON hazel.app_user        FOR INSERT WITH CHECK (hazel.is_system());
+CREATE POLICY p_intake ON hazel."user"          FOR INSERT WITH CHECK (hazel.is_system());
 CREATE POLICY p_intake ON hazel.onboarding_case FOR INSERT WITH CHECK (hazel.is_system());

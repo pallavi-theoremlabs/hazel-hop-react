@@ -41,7 +41,7 @@ services:
     healthCheckPath: /healthz
     envVars:
       - key: DATABRICKS_HOST
-        value: https://dbc-6400d9ac-e0d7.cloud.databricks.com
+        value: https://dbc-856fd117-5ec8.cloud.databricks.com
       - key: DATABRICKS_APP_URL
         value: https://hazel-api-7474644508009163.aws.databricksapps.com
 

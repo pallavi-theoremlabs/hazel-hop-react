@@ -1,8 +1,8 @@
 """Ordered migration runner for the Hazel HOP Lakebase database.
 
-    python backend/migrate.py --status     # what is applied, what is pending
-    python backend/migrate.py              # apply everything pending
-    python backend/migrate.py --verify     # post-apply assertions (§8 step 2)
+    python apps/api/migrate.py --status     # what is applied, what is pending
+    python apps/api/migrate.py              # apply everything pending
+    python apps/api/migrate.py --verify     # post-apply assertions (§8 step 2)
 
 Connection details come from the environment — five variables injected by the
 Lakebase resource plus ENDPOINT_NAME, which the resource does not inject and
