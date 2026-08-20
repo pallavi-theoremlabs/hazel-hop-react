@@ -1,4 +1,36 @@
 {
+  "createAccount": {
+    "title": "Create your Hazel account",
+    "description": "Create a password to securely access the Hazel Network.",
+    "fields": {
+      "password": {
+        "label": "Create password"
+      },
+      "confirmPassword": {
+        "label": "Confirm password"
+      }
+    },
+    "requirements": {
+      "minLength": "At least 12 characters",
+      "uppercase": "One uppercase letter",
+      "lowercase": "One lowercase letter",
+      "number": "One number",
+      "symbol": "One symbol"
+    },
+    "actions": {
+      "show": "Show",
+      "hide": "Hide",
+      "create": "Create account",
+      "creating": "Creating account…"
+    },
+    "validation": {
+      "errorTitle": "There is a problem",
+      "passwordRequired": "Create a password.",
+      "summary": "Create a password that meets every requirement.",
+      "confirmationRequired": "Confirm your password.",
+      "mismatch": "Enter the same password again."
+    }
+  },
   "submitInterest": {
     "eyebrow": "For regulated institutions",
     "title": "Join the Hazel Network",

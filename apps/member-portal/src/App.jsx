@@ -11,6 +11,7 @@ import NdaPage from './pages/NdaPage'
 import RiskQuestionsPage from './pages/RiskQuestionsPage'
 import OverviewPage from './pages/OverviewPage'
 import SubmitInterestPage from './pages/SubmitInterestPage'
+import CreateAccountPage from './pages/CreateAccountPage'
 import { getCase } from './services/api'
 
 const CaseContext = createContext(null)
@@ -58,6 +59,7 @@ function Guard({ stage, children }) {
 export default function App() {
   return (
     <Routes>
+      <Route path="/create-account" element={<CreateAccountPage />} />
       <Route path="/submit-interest" element={<SubmitInterestPage />} />
       <Route path="/case/:caseId/*" element={<CaseApp />} />
       <Route path="*" element={<Navigate to="/submit-interest" replace />} />
