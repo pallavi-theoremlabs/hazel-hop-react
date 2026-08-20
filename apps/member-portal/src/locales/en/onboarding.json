@@ -1,5 +1,7 @@
 {
   "stages": {
+    "eligibility": "Eligibility",
+    "registration": "Registration",
     "nda": "NDA",
     "dueDiligence": "Due Diligence",
     "documents": "Documents",
@@ -18,7 +20,7 @@
     "welcome": "Welcome back, {{institution}}",
     "contact": "Hazel contact: Avery Morgan · onboarding@hazel.example",
     "journeyTitle": "Your onboarding journey",
-    "journeyDescription": "Accept the NDA, complete Due Diligence, then continue through Documents and Risk Questions. Hazel approval unlocks eSign before Account Opening.",
+    "journeyDescription": "Complete the NDA, Documents, and Risk Questions. Hazel approval unlocks eSign before Account Opening.",
     "nextStep": "Your next step",
     "stageAccess": "Stage access",
     "institutionDetails": "Institution details",
@@ -109,7 +111,7 @@
     "replacePolicy": "Upload a replacement version",
     "uploading": "Uploading…",
     "fileHint": "PDF, Word, or Excel · up to 25 MB",
-    "supportingTitle": "Supporting documents",
+    "supportingTitle": "Optional Documents",
     "supportingDescription": "If your institution has a completed Wolfsberg CBDDQ or other documents that may support Hazel’s review, you can upload them here.",
     "wolfsberg": "Wolfsberg CBDDQ",
     "wolfsbergHint": "Optional · upload your current completed questionnaire if applicable.",
@@ -233,7 +235,11 @@
       "action": "Submit Risk Questionnaire",
       "submitting": "Submitting…",
       "saving": "Saving responses…",
-      "pendingSave": "Wait for the current Risk Question save to finish before submitting."
+      "pendingSave": "Wait for the current Risk Question save to finish before submitting.",
+      "confirmTitle": "Submit Risk Questionnaire?",
+      "confirmDescription": "You have reviewed all answers and confirm that the information submitted to Hazel is accurate and complete.",
+      "confirmNext": "After submission, Hazel Review begins and this page will show the current review status.",
+      "confirmAction": "Submit Questionnaire"
     },
     "empty": {
       "title": "No Risk Questions are available",
@@ -264,13 +270,13 @@
     "responseSubmitted": "Response submitted",
     "responseSubmittedDescription": "Your additional information response was saved in Hazel.",
     "reviewResumed": "Review resumed",
-    "reviewInProgress": "Hazel/Vantage review",
+    "reviewInProgress": "Hazel review",
     "decision": "Review decision",
-    "decisionWaiting": "Waiting for Vantage to approve or reject the intake.",
+    "decisionWaiting": "Hazel will notify your institution when the review is complete.",
     "decisionRecorded": "The internal decision has been recorded.",
     "states": {
-      "under_review": { "label": "Under Hazel/Vantage review", "description": "Your certified submission is with the Hazel/Vantage review team.", "expected": "Hazel will notify your institution when the review decision is available." },
-      "response_submitted": { "label": "Under Hazel/Vantage review", "description": "Your additional information response was submitted in Hazel and review has resumed.", "expected": "No further action is currently required unless the Hazel Review Team contacts you." },
+      "under_review": { "label": "Under Hazel Review", "description": "Your Risk Questionnaire submission is with Hazel.", "expected": "Hazel will notify your institution when the review is complete." },
+      "response_submitted": { "label": "Under Hazel Review", "description": "Your additional information response was submitted in Hazel and review has resumed.", "expected": "No further action is currently required unless the Hazel Review Team contacts you." },
       "approved": { "label": "Review Complete", "description": "Hazel has approved your institution to continue to eSign.", "expected": "Continue to eSign." },
       "rejected": { "label": "Rejected", "description": "The review did not approve this onboarding intake.", "expected": "Onboarding has not advanced, and eSign is not available." },
       "partial": { "label": "Needs explicit handling", "description": "A partial decision does not count as Hazel approval.", "expected": "The case remains unresolved and will not advance automatically." }
@@ -312,5 +318,61 @@
       "draftSaved": "Draft saved in Hazel. It has not been submitted.",
       "documentUploaded": "Replacement document uploaded to Hazel."
     }
+  },
+  "esign": {
+    "eyebrow": "eSign",
+    "title": "Agreement & eSign",
+    "description": "Hazel Review is complete. The agreement will be presented here for electronic signature before account opening.",
+    "status": "Agreement content pending confirmation",
+    "agreementTitle": "Hazel Agreement",
+    "agreementDescription": "The agreement package will be provided by Hazel Legal and Operations.",
+    "noticeTitle": "The agreement content and signing requirements are being confirmed.",
+    "notice": "This frontend state does not identify a confirmed legal document, signing provider, or production envelope.",
+    "signerTitle": "Authorized signer",
+    "signerFallback": "Authorized signer to be confirmed",
+    "institutionFallback": "Institution",
+    "signerHelp": "The signer must be authorized to execute agreements on behalf of the institution.",
+    "stepsLabel": "Signing steps",
+    "review": "Review",
+    "acknowledge": "Acknowledge",
+    "sign": "Sign",
+    "stepUnavailable": "Available when the production eSign integration is confirmed.",
+    "action": "Review and eSign"
+  },
+  "accountOpening": {
+    "eyebrow": "Post-approval",
+    "title": "Account Setup & Signatures",
+    "description": "Confirm entity, operating-model, contact, and account information before document preparation.",
+    "status": "Integration pending",
+    "setupTitle": "Institution and operating setup",
+    "institution": "Institution",
+    "institutionFallback": "Institution details pending",
+    "nature": "Nature of business",
+    "natureValue": "Regulated financial institution",
+    "model": "Hazel model",
+    "modelValue": "Basic — working assumption",
+    "operations": "Operations contact",
+    "operationsValue": "To be confirmed",
+    "assumptionTitle": "Basic model working assumption",
+    "assumption": "Settlement / reserve account and business operating account. Final product policy remains subject to confirmation.",
+    "packageTitle": "Document package",
+    "packageDescription": "The prototype package is shown for layout review only.",
+    "packageUnavailable": "Waiting for confirmed account-opening and signing integrations.",
+    "waiting": "Not available",
+    "packages": {
+      "signatureCard": "Signature Card",
+      "resolution": "Resolution / RESO",
+      "wireAgreement": "Wire Agreement",
+      "terms": "Terms and Conditions",
+      "disclosures": "Account Disclosures"
+    },
+    "strategyTitle": "Account-number strategy",
+    "strategyDescription": "The prototype illustrates reservation and assignment strategies, but no production strategy is approved here.",
+    "integrationTitle": "No account-opening integration is connected.",
+    "integrationDescription": "No account number will be reserved and no downstream request will be sent from this page.",
+    "signersTitle": "Authorized signers",
+    "signerPending": "Signer details pending",
+    "signerDescription": "Identity and signer verification remain securely downstream and are not simulated here.",
+    "action": "Prepare document workflow"
   }
 }

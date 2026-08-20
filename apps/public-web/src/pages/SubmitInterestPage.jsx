@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import StatusBadge from '../components/StatusBadge'
 import { lookupBankByFdic, submitInterest } from '../services/api'
@@ -92,6 +93,7 @@ function InterestField({ field, value, error, onChange, required = true, classNa
 
 export default function SubmitInterestPage() {
   const { t, i18n } = useTranslation(['public', 'common'])
+  const navigate = useNavigate()
   const contactFields = CONTACT_FIELDS.map((field) => fieldCopy(field, t, i18n))
   const institutionTypes = t('public:submitInterest.institutionTypes', { returnObjects: true })
   const [values, setValues] = useState(DEV_MODE ? DEV_VALUES : EMPTY_VALUES)
@@ -269,7 +271,7 @@ export default function SubmitInterestPage() {
 
         {contactFields.map((field) => <InterestField key={field.name} field={field} value={values[field.name]} error={errors[field.name]} onChange={update} />)}
       </div>
-      <div className="actions"><Button disabled={busy || lookupBusy || unsupported}>{busy ? t('public:submitInterest.sending') : t('public:submitInterest.submit')}</Button></div>
+      <div className="actions"><Button disabled={busy || lookupBusy || unsupported}>{busy ? t('public:submitInterest.sending') : t('public:submitInterest.submit')}</Button><Button type="button" variant="secondary" disabled={busy || lookupBusy} onClick={() => navigate('/')}>{t('common:actions.back')}</Button></div>
       <p className="submission-note">{t('public:submitInterest.requiredNote')}</p>
     </form>
   </main></div>

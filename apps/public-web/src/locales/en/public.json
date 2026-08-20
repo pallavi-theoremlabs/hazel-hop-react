@@ -1,4 +1,23 @@
 {
+  "landing": {
+    "homeLabel": "Hazel Network home",
+    "brand": "Hazel Network",
+    "navigationLabel": "Public navigation",
+    "howItWorks": "How Hazel works",
+    "signIn": "Sign in",
+    "eyebrow": "Bank-led digital money",
+    "title": "Move money forward, with banks at the center.",
+    "newTitle": "New to Hazel?",
+    "newDescription": "Submit an institution inquiry to begin the eligibility review. Submitting an inquiry does not create a portal account.",
+    "action": "Join Hazel",
+    "benefitsEyebrow": "A coordinated path to launch",
+    "benefitsTitle": "One Hazel experience from interest to production.",
+    "benefits": [
+      { "title": "Bank-first onboarding", "description": "Eligibility, due diligence, account setup, technical readiness, and launch are presented as one coherent journey." },
+      { "title": "Clear responsibilities", "description": "Each step identifies what your institution needs to do and what Hazel is reviewing." },
+      { "title": "Designed for control", "description": "Role-based tasks, document requests, approvals, and go-live controls keep progress visible." }
+    ]
+  },
   "submitInterest": {
     "eyebrow": "For regulated institutions",
     "title": "Join the Hazel Network",

@@ -71,7 +71,7 @@ export default function HazelReviewPage() {
           <Timeline state={decisionReached ? 'complete' : 'current'} title={responseSubmitted ? copy('reviewResumed') : copy('reviewInProgress')} copy={decisionReached ? copy('decisionRecorded') : content.description} />
           <Timeline state={decisionReached ? 'current' : ''} title={copy('decision')} copy={decisionReached ? content.expected : copy('decisionWaiting')} />
         </div>
-        <div className="review-bottom-actions"><div className="actions"><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button><Button variant="secondary" disabled={isRefreshing} onClick={() => refresh().catch(() => {})}>{isRefreshing ? copy('refreshing') : copy('refresh')}</Button>{reviewState === 'approved' && <Button onClick={() => window.alert(copy('esignUnavailable'))}>{copy('continueEsign')}</Button>}</div></div>
+        <div className="review-bottom-actions"><div className="actions"><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button><Button variant="secondary" disabled={isRefreshing} onClick={() => refresh().catch(() => {})}>{isRefreshing ? copy('refreshing') : copy('refresh')}</Button>{reviewState === 'approved' && <Button onClick={() => navigate(`/case/${caseId}/esign`)}>{copy('continueEsign')}</Button>}</div></div>
       </Card>
     </div>
   </>

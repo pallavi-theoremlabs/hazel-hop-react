@@ -15,8 +15,8 @@ const NAV_ITEMS = [
 ]
 
 const FUTURE_ITEMS = [
-  { labelKey: 'stages.esign' },
-  { labelKey: 'stages.accountOpening' },
+  { labelKey: 'stages.esign', path: 'esign' },
+  { labelKey: 'stages.accountOpening', path: 'account-opening' },
 ]
 
 export default function AppShell({ caseData, refreshCase, children }) {
@@ -65,9 +65,16 @@ export default function AppShell({ caseData, refreshCase, children }) {
             </div>}
           </div>
         })}
-        {FUTURE_ITEMS.map((item) => <span className="nav nav-state-locked" aria-disabled="true" key={item.labelKey}>
-          <i className="nav-state-icon" aria-hidden="true">▣</i><span>{t(`onboarding:${item.labelKey}`)}</span><small>{t('common:status.locked')}</small>
-        </span>)}
+        {FUTURE_ITEMS.map((item) => {
+          const active = activePath === item.path
+          const available = item.path === 'esign' && Boolean(caseData.esign_eligible)
+          if (active || available) return <NavLink className={`nav nav-state-${active ? 'current' : 'available'} ${active ? 'active' : ''}`} to={`/case/${caseId}/${item.path}`} key={item.labelKey}>
+            <i className="nav-state-icon" aria-hidden="true">{active ? '●' : ''}</i><span>{t(`onboarding:${item.labelKey}`)}</span><small>{active ? t('common:status.current') : t('common:status.available')}</small>
+          </NavLink>
+          return <span className="nav nav-state-locked" aria-disabled="true" key={item.labelKey}>
+            <i className="nav-state-icon" aria-hidden="true">▣</i><span>{t(`onboarding:${item.labelKey}`)}</span><small>{t('common:status.locked')}</small>
+          </span>
+        })}
         <div className="side-foot">{t('common:navigation.prototypeFooter')}<br />{t('common:navigation.syntheticData')}</div>
       </aside>
       <main className="page" id="main-content">
