@@ -14,7 +14,7 @@ from app.services.rafa import (
     rafa_service,
 )
 
-router = APIRouter(prefix="/api/public", tags=["public-onboarding"])
+router = APIRouter(prefix="/api", tags=["public-onboarding"])
 logger = logging.getLogger("uvicorn.error")
 
 

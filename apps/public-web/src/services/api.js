@@ -1,4 +1,4 @@
-// Public API client. Two endpoints, both under /api/public — the only two this
+// Public API client. Two endpoints, both under /api — the only two this
 // app calls. The member portal keeps its own copy of this module with the
 // /api/cases/* surface; the two are deliberately not shared, because they have
 // no endpoint in common and sharing them would couple the apps' release cadence
@@ -33,5 +33,5 @@ const jsonOptions = (method, data) => ({
   body: JSON.stringify(data),
 })
 
-export const lookupBankByFdic = (fdicCertificateNumber) => request(`/api/public/banks/${encodeURIComponent(fdicCertificateNumber)}`)
-export const submitInterest = (data) => request('/api/public/submit-interest', jsonOptions('POST', data))
+export const lookupBankByFdic = (fdicCertificateNumber) => request(`/api/banks/${encodeURIComponent(fdicCertificateNumber)}`)
+export const submitInterest = (data) => request('/api/submit-interest', jsonOptions('POST', data))

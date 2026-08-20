@@ -54,10 +54,10 @@ app = FastAPI(title="Hazel HOP API", version="0.1.0", lifespan=lifespan)
 #
 # What survives is the lookup that needs no database at all:
 #
-#     GET /api/public/banks/fdic/{cert}   ->  RAFA over HTTP  ->  JSON
+#     GET /api/banks/{cert}   ->  RAFA over HTTP  ->  JSON
 #
 # which is the end-to-end path the UI's lookup button exercises. Its neighbour
-# POST /api/public/submit-interest does write to the missing tables and will fail;
+# POST /api/submit-interest does write to the missing tables and will fail;
 # that is expected and is the next thing to port.
 app.include_router(public_router, dependencies=[Depends(require_proxy)])
 

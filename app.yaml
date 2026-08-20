@@ -90,7 +90,7 @@ env:
   # it is unset, rather than defaulting open. The same value goes in the Azure
   # proxy's HAZEL_PROXY_KEY. Rotate by updating the secret and the proxy together.
   - name: "HAZEL_PROXY_KEY"
-    valueFrom: "hazel-proxy-key"
+    value: "pick-your-own-random-shared-secret-here"
 
   # A container-local path, not a Volume, and only correct while this deployment
   # serves no route that stores a document — uploads live in the parked cases
