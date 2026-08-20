@@ -1,0 +1,8 @@
+{
+  "name": "hazel-hop-react",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
