@@ -1,4 +1,10 @@
-# Render service for the backend-for-frontend.
+# Documents the Render service for the backend-for-frontend. Does NOT drive it.
+#
+# Render discovers Blueprints only at the repository root, and this file has never
+# lived there — it was azure-proxy/render.yaml before the monorepo move and is
+# apps/bff/render.yaml after it. The running service was configured by hand in the
+# dashboard, so this file is the record of what those settings are meant to be.
+# Change one, change the other.
 #
 # This tier exists because a browser cannot call a Databricks App directly: the App
 # is behind the workspace auth proxy, your members are banks with no Databricks
@@ -6,14 +12,26 @@
 # preflight is sent without credentials so it is rejected before the real request
 # is attempted. The proxy holds the secret and mints the token server-side.
 #
-# Deploy alongside the existing frontend service. The UI then calls this origin,
-# not the App, so no CORS is involved anywhere.
+# The SPA and this tier are separate Render services on separate origins, so the
+# browser's call here is cross-origin and FRONTEND_ORIGIN below has to answer its
+# preflight. The hop from here to the App is server-to-server, carries no Origin
+# header, and needs no CORS at either end.
 
 services:
   - type: web
-    name: hazel-hop-bff
+    # Historical name: this service predates the split into a frontend service and
+    # a BFF, so it is named after the repository rather than the tier. Kept because
+    # the name is the hostname — renaming it to something tidier would move the
+    # service to a new URL and break the frontend, which is built against
+    # https://hazel-hop-react.onrender.com at compile time.
+    name: hazel-hop-react
     runtime: python
+    # Was azure-proxy until the monorepo move (commit 1941f01). The dashboard's
+    # Root Directory must match this, or the build fails looking for a path that no
+    # longer exists and the service serves 503.
     rootDir: apps/bff
+    # Not the free plan: free spins down, and cold starts are unacceptable on a
+    # tier that streams 25MB multipart uploads through.
     plan: starter
     buildCommand: pip install -r requirements.txt
     # Single worker: the OAuth token cache is per-process, so more workers just
@@ -26,6 +44,16 @@ services:
         value: https://dbc-6400d9ac-e0d7.cloud.databricks.com
       - key: DATABRICKS_APP_URL
         value: https://hazel-hop-demo-7474650915199601.aws.databricksapps.com
+
+      # The SPA's origin: scheme and host, no path and no trailing slash, compared
+      # verbatim against the browser's Origin header.
+      #
+      # Absence is not fatal by design, because a same-origin deployment genuinely
+      # needs no CORS (proxy.py:141-148). That makes this the one setting here whose
+      # omission passes every server-side check: the deploy goes green, /healthz
+      # answers, curl works, and only the browser console shows the failure.
+      - key: FRONTEND_ORIGIN
+        value: https://frontend-hop.onrender.com
 
       # sync: false means Render prompts for the value and never stores it in git.
       # The service principal's credentials — the same one the App runs as.

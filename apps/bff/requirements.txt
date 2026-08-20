@@ -1,4 +1,4 @@
-# Deployment artifact for the Azure App Service tier. Exact pins for the same
+# Deployment artifact for the Render BFF tier. Exact pins for the same
 # reason as the root requirements.txt: a `>=` here is a future AttributeError in a
 # container nobody is watching.
 #

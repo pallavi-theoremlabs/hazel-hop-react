@@ -1,4 +1,4 @@
-"""Azure backend-for-frontend: the only thing that talks to the Databricks App.
+"""Render backend-for-frontend: the only thing that talks to the Databricks App.
 
 Why this tier exists at all
 ---------------------------
@@ -71,7 +71,7 @@ HAZEL_PROXY_KEY = _required("HAZEL_PROXY_KEY")
 BLOCKED_PREFIXES = ("/api/dev",)
 
 # Hop-by-hop headers, plus the ones that must be recomputed for the upstream
-# request rather than copied. Host would otherwise carry the Azure hostname to
+# request rather than copied. Host would otherwise carry this tier's hostname to
 # Databricks, and Authorization is ours to set. Content-Length is dropped because
 # the body is re-streamed and httpx recomputes framing.
 STRIPPED_REQUEST_HEADERS = {
@@ -277,7 +277,7 @@ async def forward(path: str, request: Request):
 async def healthz():
     """This tier's own liveness. Deliberately does not call upstream.
 
-    Azure restarts an instance that fails its health probe, and a Databricks-side
+    Render restarts an instance that fails its health check, and a Databricks-side
     outage is not something restarting this process would fix. Use /api/health
     through the proxy to check the App.
     """
