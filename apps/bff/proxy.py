@@ -198,7 +198,7 @@ def resolve_session(request: Request) -> tuple[str, str | None, str] | None:
     same identity — and return its institution and role.
 
     Returning None is correct for public routes, which run before any user exists;
-    /api/public/banks/fdic/{cert} is one, which is why the lookup flow works today
+    /api/banks/{cert} is one, which is why the lookup flow works today
     with this unimplemented. It must NOT become a fallback for authenticated
     routes: the App answers 401 when the headers are absent, and that is the
     behaviour to keep.
