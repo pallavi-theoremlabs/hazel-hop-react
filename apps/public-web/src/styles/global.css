@@ -1,0 +1,146 @@
+/* Public web styles.
+ *
+ * Extracted verbatim from the combined stylesheet the single-SPA frontend used
+ * (apps/member-portal/src/styles/global.css) — same rules, same order, nothing
+ * restyled. Only the member surfaces are absent: shell, sidebar, stage tracker,
+ * NDA, documents, risk questionnaire and Hazel Review, none of which this app
+ * renders. Everything below is reachable from SubmitInterestPage, Button or
+ * StatusBadge; that was checked against their className usage rather than
+ * assumed, which is why .muted and .small are missing here — they are applied in
+ * the markup but were never defined in the source stylesheet either.
+ *
+ * When packages/ui is extracted, the tokens and the generic primitives above the
+ * public block move there and this file keeps only .public-interest.
+ */
+
+:root {
+  --plum: #3a1c32;
+  --ink: #140a14;
+  --red: #eb001f;
+  --red-hover: #c9001b;
+  --orange: #ff6e46;
+  --muted: #645573;
+  --mint: #f8fef9;
+  --mint-dark: #dfe9e1;
+  --white: #fff;
+  --line: rgba(58, 28, 50, .22);
+  --info: #315c88;
+  --success: #28734f;
+  --warning: #9a6412;
+  --danger: #b42332;
+  --sans: Inter, "Helvetica Neue", Arial, sans-serif;
+  --serif: Georgia, "Times New Roman", serif;
+  --radius: 15px;
+  --pill: 999px;
+  --shadow: 0 18px 55px rgba(58, 28, 50, .1);
+}
+
+* { box-sizing: border-box; }
+html { font-family: var(--sans); color: var(--ink); background: var(--mint); scroll-behavior: smooth; }
+body { margin: 0; min-width: 320px; }
+button, input, select, textarea { font: inherit; }
+button, a { touch-action: manipulation; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid rgba(235, 0, 31, .28); outline-offset: 3px; }
+h1, h2, h3, p { margin-top: 0; }
+
+/* --- generic primitives shared with the member app --- */
+.eyebrow { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--red); font-weight: 800; margin: 0 0 9px; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; min-width: 0; }
+.card + .card { margin-top: 20px; }
+.card h2 { margin-bottom: 0; color: var(--plum); font: 600 23px/1.2 var(--serif); }
+.card h3 { color: var(--plum); line-height: 1.4; }
+.sub { color: var(--muted); font-size: 14px; line-height: 1.55; margin: 8px 0 0; }
+.lead { color: var(--muted); line-height: 1.65; }
+
+.btn { border: 1.5px solid transparent; border-radius: var(--pill); min-height: 46px; padding: 10px 19px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 750; font-size: 14px; cursor: pointer; background: #fff; color: var(--plum); }
+.btn:hover { transform: translateY(-1px); }
+.btn.primary { background: var(--red); color: #fff; }
+.btn.primary:hover { background: var(--red-hover); }
+.btn.secondary { border-color: var(--plum); }
+.btn.quiet { border-color: var(--line); min-height: 38px; padding: 7px 13px; font-size: 12px; }
+.btn:disabled { opacity: .42; cursor: not-allowed; transform: none; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+
+.status { display: inline-flex; align-items: center; gap: 7px; min-height: 29px; padding: 5px 11px; border-radius: var(--pill); font-size: 12px; font-weight: 800; background: #f1edf0; color: var(--plum); white-space: nowrap; }
+.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.status.success { background: #e9f5ee; color: var(--success); }
+.status.warning { background: #fff4df; color: var(--warning); }
+.status.danger { background: #fff0f1; color: var(--danger); }
+.status.info { background: #eef4fb; color: var(--info); }
+
+.alert { border: 1px solid var(--line); border-left: 4px solid var(--info); background: #f7fbff; border-radius: 11px; padding: 15px 16px; font-size: 14px; line-height: 1.5; margin: 18px 0; }
+.alert.warning { border-left-color: var(--warning); background: #fffbf4; }
+.alert.danger { border-left-color: var(--danger); background: #fff7f7; }
+.alert.success { border-left-color: var(--success); background: #f5fcf8; }
+
+.success-mark { width: 38px; height: 38px; border-radius: 50%; background: var(--success); color: #fff; display: grid; place-content: center; font-weight: 900; flex: none; }
+.success-mark.warning { background: var(--warning); }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; margin-top: 20px; }
+.span-2 { grid-column: 1 / -1; }
+.field { margin: 18px 0; }
+.field label { font-size: 14px; font-weight: 750; display: block; margin-bottom: 7px; }
+.required { color: var(--red); }
+.hint { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 6px 0; }
+.input { width: 100%; min-height: 50px; padding: 12px 14px; border: 1px solid rgba(58, 28, 50, .45); border-radius: 10px; color: var(--ink); background: #fff; }
+.input:focus { border-color: var(--red); outline: 0; box-shadow: 0 0 0 4px rgba(235, 0, 31, .12); }
+.input[readonly] { background: #f8f6f7; color: var(--plum); }
+
+.spinner { width: 25px; height: 25px; border: 3px solid var(--mint-dark); border-top-color: var(--red); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.dev-label { display: block; margin-bottom: 3px; color: var(--info); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+
+/* Latest approved August 17 public Submit Interest page. */
+.auth.public-interest { min-height: 100vh; display: grid; place-content: center; padding: 34px; background: linear-gradient(135deg, var(--mint), #fff4f2); }
+.public-interest .auth-card { width: min(680px, calc(100vw - 36px)); background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 38px; box-shadow: var(--shadow); }
+.public-interest h1 { font: 400 clamp(36px, 4vw, 54px)/1.02 var(--serif); letter-spacing: -.035em; color: var(--plum); margin: 0; }
+.public-interest .lead { max-width: 720px; margin: 10px 0 0; line-height: 1.55; }
+.public-interest .interest-form { margin-top: 25px; }
+.public-interest .form-grid { margin-top: 0; }
+.public-interest .field { margin: 0 0 18px; }
+.public-interest .field.has-error .input { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
+.public-interest .field-error { color: var(--danger); font-size: 12px; font-weight: 700; margin: 7px 0 0; }
+.public-interest .error-summary { border: 2px solid var(--danger); background: #fff7f7; border-radius: 11px; padding: 16px; margin: 20px 0; }
+.public-interest .error-summary h2 { font: 700 18px/1.3 var(--sans); color: var(--danger); margin: 0 0 8px; }
+.public-interest .error-summary ul { margin: 0; padding-left: 20px; }
+.public-interest .error-summary a { color: var(--danger); font-weight: 700; }
+.public-interest .submission-note { font-size: 13px; color: var(--muted); line-height: 1.5; margin-top: 18px; }
+.public-interest > .auth-card > .status { margin: 0 0 16px; }
+.public-interest .local-dev-simulation { margin-top: 24px; border: 1px dashed var(--info); border-radius: 13px; background: #f4f8fc; padding: 18px; }
+.public-interest .local-dev-simulation h2 { margin: 0; color: var(--plum); font: 600 22px/1.2 var(--serif); }
+.public-interest .institution-search-field { margin-bottom: 24px; }
+.public-interest .institution-search-helper { margin: 0 0 9px; }
+.public-interest .institution-search-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.public-interest .institution-search-control .input { min-height: 48px; border-radius: 10px 0 0 10px; }
+.public-interest .institution-search-control .btn { min-height: 48px; border-radius: 0 10px 10px 0; padding-inline: 22px; white-space: nowrap; }
+.public-interest .institution-search-control:focus-within { border-radius: 10px; box-shadow: 0 0 0 4px rgba(235, 0, 31, .12); }
+.public-interest .institution-search-control:focus-within .input { border-color: var(--red); box-shadow: none; }
+.public-interest .institution-search-state { display: flex; align-items: center; gap: 9px; min-height: 32px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+.public-interest .institution-search-state .spinner { width: 18px; height: 18px; border-width: 2px; }
+.public-interest .selected-institution { padding: 22px; margin: 0 0 24px; }
+.public-interest .selected-institution-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.public-interest .selected-institution-title { min-width: 0; }
+.public-interest .selected-institution-title h2 { font: 700 13px/1.25 var(--sans); color: var(--muted); margin-bottom: 12px; }
+.public-interest .selected-institution-name { font-size: 18px; line-height: 1.35; color: var(--plum); overflow-wrap: anywhere; }
+.public-interest .selected-institution-sub { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.public-interest .selected-institution .status { flex: none; }
+.public-interest .selected-institution-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0 0; padding-top: 18px; border-top: 1px solid var(--line); }
+.public-interest .selected-institution-meta div { min-width: 0; }
+.public-interest .selected-institution-meta dt { font-size: 11px; font-weight: 750; color: var(--muted); margin-bottom: 5px; }
+.public-interest .selected-institution-meta dd { margin: 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.public-interest .selected-institution .actions { margin-top: 18px; }
+.public-interest .selected-institution .btn { min-height: 40px; padding: 8px 16px; }
+.public-interest .unsupported-institution { margin: 0 0 24px; }
+
+
+@media (max-width: 720px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .span-2 { grid-column: auto; }
+  .card { padding: 20px; }
+  .auth.public-interest { padding: 18px; }
+  .public-interest .auth-card { padding: 26px; }
+  .public-interest .institution-search-control .btn { padding-inline: 15px; }
+  .public-interest .selected-institution-meta { grid-template-columns: 1fr; }
+}
