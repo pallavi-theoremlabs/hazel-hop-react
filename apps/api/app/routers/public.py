@@ -106,7 +106,7 @@ async def submit_interest(payload: SubmitInterestCreate):
     # request tenancy here — /api/public is mounted with require_proxy alone.
     #
     # WARNING: every statement in this block still names tables from the retired
-    # apps/api/migrations/ model — organizations, institutions, rafa_screenings,
+    # pre-Lakebase model — organizations, institutions, rafa_screenings,
     # onboarding_cases, express_interest_submissions, institution_profiles,
     # due_diligence. None exist in the final schema, so this endpoint fails on the
     # first INSERT with UndefinedTable. Fixing the call signature below stops it

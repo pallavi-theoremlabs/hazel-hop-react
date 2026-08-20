@@ -2,8 +2,7 @@
 
 Replaces the file-backed sqlite3 connection this module used to open per request,
 and the inline DDL that used to run on every boot. Schema now lives in
-postgres setup/hazel_schema.sql and is applied out of band. apps/api/migrations/
-builds a different, retired data model and is not what this connects to.
+postgres setup/hazel_schema.sql and is applied out of band.
 """
 
 from __future__ import annotations
@@ -56,23 +55,30 @@ STAGES = [
 # DOCUMENTS under the clamp, which is meaningless.
 #
 # Written by submit_interest() when RAFA screening rejects an institution. The
-# database CHECK constraint on onboarding_cases.current_stage covers STAGES plus
-# these; keep migration 006 in step with this set.
+# deployed CHECK constraint does NOT cover this value, or any value in STAGES —
+# see the note below.
 TERMINAL_STAGES = frozenset({"INQUIRY_REJECTED"})
 
 ALL_STAGES = frozenset(STAGES) | TERMINAL_STAGES
 
-# NOTE: the three constants above describe the *application's* stage machine, which
-# does not match ck_case_stage in the final schema:
+# NOTE: the three constants above describe the *application's* stage machine. It
+# does not merely differ from ck_case_stage — the two sets are disjoint. Read from
+# the live catalog, not from the schema file:
 #
-#     app     NDA_PENDING NDA_ACCEPTED INSTITUTION_PROFILE DOCUMENTS
-#             DUE_DILIGENCE RISK_QUESTIONS HAZEL_REVIEW INQUIRY_REJECTED
-#     schema  INQUIRY ELIGIBILITY_SCREENING NDA DUE_DILIGENCE
-#             RISK_ASSESSMENT VANTAGE_REVIEW ACCOUNT_OPENING COMPLETED
+#     app       NDA_PENDING NDA_ACCEPTED INSTITUTION_PROFILE DOCUMENTS
+#               DUE_DILIGENCE RISK_QUESTIONS HAZEL_REVIEW INQUIRY_REJECTED
+#     database  INQUIRY ELIGIBILITY_SCREENING NDA RISK_ASSESSMENT
+#               VANTAGE_REVIEW ACCOUNT_OPENING COMPLETED
 #
-# Three application stages collapse onto the schema's DUE_DILIGENCE, so the mapping
-# is lossy in that direction and is an open product decision, not something to
-# settle here. They are left in place because update_stage() and the parked cases
+# Not one value above is legal for onboarding_case.current_stage. DUE_DILIGENCE
+# looks like an overlap and is not: the deployed constraint has no such stage, so
+# writing it raises a check-constraint violation rather than landing in a
+# neighbouring bucket. An earlier version of this note claimed three application
+# stages collapsed onto a schema DUE_DILIGENCE; that stage exists only in a draft
+# of hazel_schema.sql that was never applied.
+#
+# Which vocabulary wins is an open product decision, not something to settle here.
+# The constants are left in place because update_stage() and the parked cases
 # router still read them; nothing mounted today writes a stage.
 
 
@@ -305,22 +311,42 @@ def row_dict(row):
 def init_db() -> None:
     """Assert the database is usable. It no longer creates anything.
 
-    Schema is applied out of band from postgres setup/hazel_schema.sql — not by
-    apps/api/migrate.py, which builds a retired model. A forgotten migration
-    used to be impossible (the DDL ran on every boot) and is now a real failure
-    mode, so it is checked here instead of surfacing as a missing-relation error
-    on the first request.
+    Schema is applied out of band from postgres setup/hazel_schema.sql. There is no
+    migration runner: the file is a DROP-and-recreate script, so pointing one at it
+    would make a routine command destroy the database. Apply it deliberately, with
+    the tooling in postgres setup/.
+
+    A forgotten apply used to be impossible (the DDL ran on every boot) and is now a
+    real failure mode, so it is checked here instead of surfacing as a
+    missing-relation error on the first request.
     """
     # The schema in postgres setup/hazel_schema.sql, which is authoritative and
-    # final. Deliberately not the set apps/api/migrations/ builds — that directory
-    # describes a different data model and is retired; see the note in init_db's
-    # docstring.
+    # final, and corrected against the deployed catalogs rather than the other way
+    # round.
     #
-    # "user" rather than "app_user": the live database predates that rename in
-    # hazel_schema.sql. Asserted as deployed rather than as the file reads, because
-    # this check exists to describe reality, not to argue with it.
+    # An apps/api/migrations/ directory used to build a different, retired model. It
+    # was deleted rather than left beside a working migration runner: a --status run
+    # against it is what created the stray hazel.schema_migrations table in the live
+    # database. Recover the old DDL from git history if the parked routers need it.
+    #
+    # "user", not "app_user". The deployed table is hazel."user" — bare `user` is a
+    # reserved word, so every reference to it needs permanent quoting. This check
+    # reads pg_tables, which reports the unquoted name, so it is spelled plainly
+    # here.
+    #
+    # hazel_schema.sql used to declare app_user and was corrected to match the
+    # database rather than the other way round. The live primary key index is still
+    # named app_user_pkey, which is how the direction is known: the table was
+    # created under that name and renamed, and Postgres keeps index names across a
+    # rename.
+    #
+    # This used to accept either spelling. It no longer does. Both workspaces were
+    # read directly and both have `user`, so the accommodation covered a database
+    # that does not exist, and accepting a name nothing deploys would let a genuinely
+    # wrong schema past this check.
     expected = {
         "institution",
+        "user",
         "rafa",
         "onboarding_case",
         "document",
@@ -328,15 +354,6 @@ def init_db() -> None:
         "audit_log",
     }
 
-    # The user table is spelled differently depending on when the schema was
-    # applied. hazel_schema.sql calls it app_user, with a comment explaining that
-    # bare `user` is a reserved word needing permanent quoting; the database this
-    # first deployed against predates that rename and still has `user`.
-    #
-    # Either satisfies this check, deliberately. Requiring one name would make a
-    # correctly-applied schema fail in one workspace or the other, and this
-    # assertion exists to catch a *missing* schema, not to arbitrate a rename.
-    user_table_names = {"app_user", "user"}
     with connection(session=SYSTEM_SESSION) as conn:
         present = {
             row["tablename"]
@@ -345,8 +362,6 @@ def init_db() -> None:
             ).fetchall()
         }
         missing = expected - present
-        if not (user_table_names & present):
-            missing = missing | {"app_user"}
         if missing:
             raise RuntimeError(
                 f"Lakebase schema is not current; missing tables: {sorted(missing)}. "
