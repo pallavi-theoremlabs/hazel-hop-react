@@ -13,7 +13,7 @@ services:
   - type: web
     name: hazel-hop-bff
     runtime: python
-    rootDir: azure-proxy
+    rootDir: apps/bff
     plan: starter
     buildCommand: pip install -r requirements.txt
     # Single worker: the OAuth token cache is per-process, so more workers just
