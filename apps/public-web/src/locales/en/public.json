@@ -35,7 +35,7 @@
     "devSimulation": "Local development only",
     "devTitle": "Continue the approved test path",
     "devDescription": "This control is available only in the local development build.",
-    "openNda": "Open NDA",
+    "continueOnboarding": "Continue onboarding",
     "fields": {
       "legalName": { "label": "Legal institution name", "hint": "Use the institution’s complete legal name." },
       "fdic": { "label": "FDIC certificate number" },

@@ -1,13 +1,14 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import { buildMemberPortalUrl } from '../services/memberPortalUrl'
 
-const MEMBER_PORTAL_URL = (import.meta.env.VITE_MEMBER_PORTAL_URL ?? '').replace(/\/$/, '')
+const MEMBER_PORTAL_URL = import.meta.env.VITE_MEMBER_PORTAL_URL
 
 export default function LandingPage() {
   const { t } = useTranslation('public')
   const benefits = t('landing.benefits', { returnObjects: true })
-  const signInUrl = `${MEMBER_PORTAL_URL}/sign-in`
+  const signInUrl = buildMemberPortalUrl(MEMBER_PORTAL_URL, '/sign-in')
 
   return <div className="public-landing">
     <header className="public-head">

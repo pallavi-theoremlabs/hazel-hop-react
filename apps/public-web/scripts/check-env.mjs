@@ -15,11 +15,9 @@
  * which is also why api.js uses ?? rather than ||: an empty string is falsy, and
  * || would quietly rewrite a deliberate same-origin build back to localhost.
  *
- * VITE_MEMBER_PORTAL_URL is deliberately NOT required. It is read only behind
- * DEV_MODE (import.meta.env.DEV && VITE_DEV_MODE), so a production build strips
- * its only caller; requiring it would fail builds over a value production never
- * reads. It is reported below when set, so a dev build shows where the handoff
- * points.
+ * VITE_MEMBER_PORTAL_URL is also required: the production landing page uses it
+ * for Sign In, and the explicit development-only bridge uses it for the eligible
+ * onboarding handoff.
  */
 import { loadEnv } from 'vite'
 
@@ -36,7 +34,7 @@ into the shipped bundle.
 
 Set it to one of:
   VITE_API_BASE_URL=            same-origin
-  VITE_API_BASE_URL=http://localhost:8000    local backend
+  VITE_API_BASE_URL=http://localhost:8000    local BFF
 
 Either export it, or put it in apps/public-web/.env.
 `)
@@ -47,6 +45,16 @@ const shown = value === '' ? '(empty -> same-origin)' : value
 console.log(`VITE_API_BASE_URL = ${shown}`)
 
 const memberPortal = env.VITE_MEMBER_PORTAL_URL
-if (memberPortal) {
-  console.log(`VITE_MEMBER_PORTAL_URL = ${memberPortal} (dev-only handoff)`)
+if (!memberPortal) {
+  console.error('\nVITE_MEMBER_PORTAL_URL is required for member Sign In and onboarding navigation.\n')
+  process.exit(1)
 }
+
+try {
+  const url = new URL(memberPortal)
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol')
+} catch {
+  console.error('\nVITE_MEMBER_PORTAL_URL must be an absolute http(s) URL.\n')
+  process.exit(1)
+}
+console.log(`VITE_MEMBER_PORTAL_URL = ${memberPortal}`)
