@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import Button from '../Button'
-import StatusBadge from '../StatusBadge'
+import Button from '../../shared/Button'
+import StatusBadge from '../../shared/StatusBadge'
 import { canAcceptSuggestedAnswer, commentChanged, isAnswerEmpty, isMemberEdited, suggestedAnswerFor, textResponseChanged } from './riskQuestionState'
 
 const EMPTY_CONTACT = { name: '', title: '', email: '', phone_number: '', linkedin: '' }
@@ -42,7 +42,7 @@ export default function QuestionRenderer({ question, answer, state, position, to
         <p>{suggestedAnswerFor(question) || t('riskQuestions.question.noSuggestion')}</p>
         {sourceLabels.length > 0 && <div className="question-source-list">{sourceLabels.map((label) => <span className="source-chip suggested" key={label}>{label}</span>)}</div>}
       </div>
-      <details className="reasoning"><summary>{t('riskQuestions.question.whySuggested')}</summary><p>{question.detailed_reasoning || question.reasoning || t('riskQuestions.question.noReasoning')}</p>{(question.ai_confidence || question.confidence) && <p className="sub">{t('riskQuestions.question.confidence', { confidence: question.ai_confidence || question.confidence })}</p>}</details>
+      <details className="reasoning"><summary>{t('riskQuestions.question.whySuggested')}</summary><p>{question.detailed_reasoning || question.reasoning || t('riskQuestions.question.noReasoning')}</p></details>
       <div className="field risk-inline-editor">
         <div className="risk-institution-answer-heading"><label htmlFor={`risk-answer-${id}`}>{t('riskQuestions.question.institutionAnswer')}</label>{memberEdited && <span className="source-chip institution">{t('riskQuestions.question.memberEdited')}</span>}</div>
         {(type === 'select_one' || type === 'single_select') && (question.options || []).map((option) => <label className="choice" key={option.id}><input type="radio" name={`risk-answer-${id}`} checked={(answer.selected_option_ids || []).includes(option.id)} onChange={() => selectOne(option)} /><span>{option.label}</span></label>)}

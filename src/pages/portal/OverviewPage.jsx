@@ -1,12 +1,12 @@
 import React from "react";
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useCaseContext } from '../App'
-import Button from '../components/Button'
-import Card from '../components/Card'
-import PageHeader from '../components/PageHeader'
-import ProgressTracker, { STAGES, stageIndex } from '../components/ProgressTracker'
-import StatusBadge from '../components/StatusBadge'
+import { useCaseContext } from './CaseApp'
+import Button from '../../components/shared/Button'
+import Card from '../../components/portal/Card'
+import PageHeader from '../../components/portal/PageHeader'
+import ProgressTracker, { STAGES, stageIndex } from '../../components/portal/ProgressTracker'
+import StatusBadge from '../../components/shared/StatusBadge'
 
 const NEXT_STEPS = {
   NDA_PENDING: ['ndaTitle', 'ndaDescription', 'nda', 'common:actions.continue'],
@@ -45,18 +45,6 @@ export default function OverviewPage() {
       <div>
         <Card title={overviewText('nextStep')}>
           <div className="task next-task"><span className="task-icon">1</span><div><strong>{overviewText(titleKey)}</strong><p>{overviewText(copyKey)}</p></div><Button onClick={() => navigate(`/case/${caseId}/${path}`)}>{t(actionKey.includes(':') ? actionKey : `onboarding:${actionKey}`)}</Button></div>
-        </Card>
-        <Card title={overviewText('stageAccess')}>
-          <div className="task-list">
-            {STAGES.map(([key, labelKey], index) => {
-              const state = index < current ? 'completed' : index === current ? 'current' : 'locked'
-              return <div className={`task ${state === 'completed' ? 'complete' : ''}`} key={key}>
-                <span className="task-icon">{state === 'completed' ? '✓' : state === 'current' ? '●' : '○'}</span>
-                <div><strong>{t(`onboarding:${labelKey}`)}</strong><p>{state === 'completed' ? overviewText('completedHint') : state === 'current' ? overviewText('currentHint') : overviewText('lockedHint')}</p></div>
-                <StatusBadge tone={state === 'completed' ? 'success' : state === 'current' ? 'info' : undefined}>{state === 'completed' ? t('common:status.completed') : state === 'current' ? t('common:status.current') : t('common:status.locked')}</StatusBadge>
-              </div>
-            })}
-          </div>
         </Card>
       </div>
       <aside>

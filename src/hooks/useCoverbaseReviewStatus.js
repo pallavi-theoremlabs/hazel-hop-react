@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getHazelReview } from '../services/api'
+import { getHazelReview } from '../services/portal/api'
 
 const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
 const POLL_INTERVAL_MS = DEV_MODE ? 10000 : 30000

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { createDevCase, createDevClarification, resetDevCase } from '../services/api'
-import Button from './Button'
+import { createDevCase, createDevClarification, resetDevCase } from '../../services/portal/api'
+import Button from '../shared/Button'
 
 const INITIAL_CASE = {
   case_id: 'HAZEL-TEST-002',

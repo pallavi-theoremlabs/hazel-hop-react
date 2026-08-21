@@ -2,13 +2,13 @@ import React from "react";
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useCaseContext } from '../App'
-import Button from '../components/Button'
-import Card from '../components/Card'
-import PageHeader from '../components/PageHeader'
-import StatusBadge from '../components/StatusBadge'
-import { stageIndex } from '../components/ProgressTracker'
-import { acceptNda } from '../services/api'
+import { useCaseContext } from './CaseApp'
+import Button from '../../components/shared/Button'
+import Card from '../../components/portal/Card'
+import PageHeader from '../../components/portal/PageHeader'
+import StatusBadge from '../../components/shared/StatusBadge'
+import { stageIndex } from '../../components/portal/ProgressTracker'
+import { acceptNda } from '../../services/portal/api'
 
 const NDA_DOCUMENT = '/assets/vantage-hazel-mutual-nda.html'
 
@@ -50,7 +50,7 @@ export default function NdaPage() {
         {!completed && <label className="choice nda-acknowledgement"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /><span>{copy('acknowledgement')}</span></label>}
         {error && <div className="alert danger">{error}</div>}
         <div className="actions">
-          {completed ? <><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button><Button onClick={() => navigate(`/case/${caseId}/due-diligence`)}>{copy('next')}</Button></> : <><Button disabled={!accepted || busy} onClick={submit}>{busy ? copy('recording') : copy('accept')}</Button><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button></>}
+          {completed ? <Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button> : <><Button disabled={!accepted || busy} onClick={submit}>{busy ? copy('recording') : copy('accept')}</Button><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button></>}
         </div>
       </Card>
     </div>

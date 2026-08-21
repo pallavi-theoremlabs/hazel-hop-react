@@ -1,9 +1,9 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import Button from '../components/Button'
-import StatusBadge from '../components/StatusBadge'
-import { lookupBankByFdic, submitInterest } from '../services/api'
+import Button from '../../components/shared/Button'
+import StatusBadge from '../../components/shared/StatusBadge'
+import { lookupBankByFdic, submitInterest } from '../../services/portal/api'
 
 const DEV_MODE = import.meta.env.DEV && import.meta.env.VITE_DEV_MODE === 'true'
 
@@ -37,10 +37,10 @@ const CONTACT_FIELDS = [
 ]
 
 function fieldCopy(field, t, i18n) {
-  const hintKey = `public:submitInterest.fields.${field.copyKey}.hint`
+  const hintKey = `portal:submitInterest.fields.${field.copyKey}.hint`
   return {
     ...field,
-    label: t(`public:submitInterest.fields.${field.copyKey}.label`),
+    label: t(`portal:submitInterest.fields.${field.copyKey}.label`),
     hint: i18n.exists(hintKey) ? t(hintKey) : '',
   }
 }
@@ -80,10 +80,10 @@ function InterestField({ field, value, error, onChange, required = true, classNa
 }
 
 export default function SubmitInterestPage() {
-  const { t, i18n } = useTranslation(['public', 'common'])
+  const { t, i18n } = useTranslation(['portal', 'common'])
   const navigate = useNavigate()
   const contactFields = CONTACT_FIELDS.map((field) => fieldCopy(field, t, i18n))
-  const institutionTypes = t('public:submitInterest.institutionTypes', { returnObjects: true })
+  const institutionTypes = t('portal:submitInterest.institutionTypes', { returnObjects: true })
   const [values, setValues] = useState(DEV_MODE ? DEV_VALUES : EMPTY_VALUES)
   const [errors, setErrors] = useState({})
   const [requestError, setRequestError] = useState('')
@@ -130,12 +130,12 @@ export default function SubmitInterestPage() {
   async function verifyFdic() {
     const certificate = values.fdic_certificate_number.trim()
     if (!certificate) {
-      setErrors((current) => ({ ...current, institution_search: t('public:submitInterest.validation.fdicRequired') }))
+      setErrors((current) => ({ ...current, institution_search: t('portal:submitInterest.validation.fdicRequired') }))
       document.getElementById('institution_search')?.focus()
       return
     }
     if (!/^\d{1,10}$/.test(certificate)) {
-      setErrors((current) => ({ ...current, institution_search: t('public:submitInterest.validation.fdic') }))
+      setErrors((current) => ({ ...current, institution_search: t('portal:submitInterest.validation.fdic') }))
       document.getElementById('institution_search')?.focus()
       return
     }
@@ -154,7 +154,7 @@ export default function SubmitInterestPage() {
       clearError('institution_search')
     } catch (error) {
       const messageKey = error.status === 404 ? 'lookup.notFound' : 'lookup.unavailable'
-      setErrors((current) => ({ ...current, institution_search: t(`public:submitInterest.${messageKey}`) }))
+      setErrors((current) => ({ ...current, institution_search: t(`portal:submitInterest.${messageKey}`) }))
     } finally {
       setLookupBusy(false)
     }
@@ -170,7 +170,7 @@ export default function SubmitInterestPage() {
   async function sendInquiry(event) {
     event.preventDefault()
     if (values.institution_type !== 'Bank') return
-    const nextErrors = validate(values, bankMatch, contactFields, (key, options) => t(`public:${key}`, options))
+    const nextErrors = validate(values, bankMatch, contactFields, (key, options) => t(`portal:${key}`, options))
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length) {
       document.getElementById(Object.keys(nextErrors)[0])?.focus()
@@ -193,7 +193,7 @@ export default function SubmitInterestPage() {
       setResult(created)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch {
-      setRequestError(t('public:submitInterest.submissionError'))
+      setRequestError(t('portal:submitInterest.submissionError'))
     } finally {
       setBusy(false)
     }
@@ -202,14 +202,14 @@ export default function SubmitInterestPage() {
   if (result) {
     return <div className="auth public-interest"><main className="auth-card" id="main">
       <div className="success-mark" aria-hidden="true">✓</div>
-      <StatusBadge tone="success">{t('public:submitInterest.receivedStatus')}</StatusBadge>
-      <h1>{t('public:submitInterest.completeTitle')}</h1>
-      <p className="lead">{t('public:submitInterest.completeDescription')}</p>
-      {DEV_MODE && result.eligible && result.next_path && <section className="local-dev-simulation" aria-label={t('public:submitInterest.devSimulation')}>
-        <span className="dev-label">{t('public:submitInterest.devSimulation')}</span>
-        <h2>{t('public:submitInterest.devTitle')}</h2>
-        <p className="hint">{t('public:submitInterest.devDescription')}</p>
-        <div className="actions"><Button onClick={() => navigate(result.next_path)}>{t('public:submitInterest.openNda')}</Button></div>
+      <StatusBadge tone="success">{t('portal:submitInterest.receivedStatus')}</StatusBadge>
+      <h1>{t('portal:submitInterest.completeTitle')}</h1>
+      <p className="lead">{t('portal:submitInterest.completeDescription')}</p>
+      {DEV_MODE && result.eligible && result.next_path && <section className="local-dev-simulation" aria-label={t('portal:submitInterest.devSimulation')}>
+        <span className="dev-label">{t('portal:submitInterest.devSimulation')}</span>
+        <h2>{t('portal:submitInterest.devTitle')}</h2>
+        <p className="hint">{t('portal:submitInterest.devDescription')}</p>
+        <div className="actions"><Button onClick={() => navigate(`${result.next_path}?dev_institution_id=${encodeURIComponent(result.institution_id)}`)}>{t('portal:submitInterest.openNda')}</Button></div>
       </section>}
     </main></div>
   }
@@ -218,40 +218,40 @@ export default function SubmitInterestPage() {
   const websiteField = fieldCopy({ name: 'website', copyKey: 'website', type: 'url', autoComplete: 'url' }, t, i18n)
 
   return <div className="auth public-interest"><main className="auth-card" id="main">
-    <p className="eyebrow">{t('public:submitInterest.eyebrow')}</p>
-    <h1>{t('public:submitInterest.title')}</h1>
-    <p className="lead">{t('public:submitInterest.description')}</p>
-    {Object.keys(errors).length > 0 && <div className="error-summary" role="alert"><h2>{t('public:submitInterest.errorTitle')}</h2><ul>{Object.entries(errors).map(([name, message]) => <li key={name}><a href={`#${name}`}>{message}</a></li>)}</ul></div>}
+    <p className="eyebrow">{t('portal:submitInterest.eyebrow')}</p>
+    <h1>{t('portal:submitInterest.title')}</h1>
+    <p className="lead">{t('portal:submitInterest.description')}</p>
+    {Object.keys(errors).length > 0 && <div className="error-summary" role="alert"><h2>{t('portal:submitInterest.errorTitle')}</h2><ul>{Object.entries(errors).map(([name, message]) => <li key={name}><a href={`#${name}`}>{message}</a></li>)}</ul></div>}
     {requestError && <div className="alert danger" role="alert">{requestError}</div>}
     <form className="interest-form" onSubmit={sendInquiry} noValidate>
       <div className="form-grid">
         <div className="field span-2">
-          <label htmlFor="institution_type">{t('public:submitInterest.fields.institutionType.label')} <span className="required" aria-hidden="true">*</span></label>
+          <label htmlFor="institution_type">{t('portal:submitInterest.fields.institutionType.label')} <span className="required" aria-hidden="true">*</span></label>
           <select className="input" id="institution_type" name="institution_type" value={values.institution_type} onChange={updateInstitutionType} required>
             {institutionTypes.map((option) => <option key={option}>{option}</option>)}
           </select>
         </div>
 
         {unsupported ? <>
-          <InterestField field={{ name: 'legal_name', type: 'text', autoComplete: 'organization', label: values.institution_type === 'Other' ? t('public:submitInterest.fields.organizationName.label') : t('public:submitInterest.fields.institutionName.label') }} value={values.legal_name} error={errors.legal_name} onChange={update} />
-          <InterestField field={{ name: 'institution_location', type: 'text', autoComplete: 'address-level2', label: t('public:submitInterest.fields.institutionLocation.label') }} value={values.institution_location} error={errors.institution_location} onChange={update} required={false} />
-          <div className="alert warning span-2 unsupported-institution" role="status"><strong>{t('public:submitInterest.unsupportedTitle')}</strong><br />{t('public:submitInterest.unsupportedDescription')}</div>
+          <InterestField field={{ name: 'legal_name', type: 'text', autoComplete: 'organization', label: values.institution_type === 'Other' ? t('portal:submitInterest.fields.organizationName.label') : t('portal:submitInterest.fields.institutionName.label') }} value={values.legal_name} error={errors.legal_name} onChange={update} />
+          <InterestField field={{ name: 'institution_location', type: 'text', autoComplete: 'address-level2', label: t('portal:submitInterest.fields.institutionLocation.label') }} value={values.institution_location} error={errors.institution_location} onChange={update} required={false} />
+          <div className="alert warning span-2 unsupported-institution" role="status"><strong>{t('portal:submitInterest.unsupportedTitle')}</strong><br />{t('portal:submitInterest.unsupportedDescription')}</div>
         </> : <>
           <div className={`field span-2 institution-search-field ${errors.institution_search ? 'has-error' : ''}`}>
-            <label htmlFor="institution_search">{t('public:submitInterest.lookup.label')} <span className="required" aria-hidden="true">*</span></label>
-            <p className="hint institution-search-helper" id="institution-search-hint">{t('public:submitInterest.lookup.hint')}</p>
+            <label htmlFor="institution_search">{t('portal:submitInterest.lookup.label')} <span className="required" aria-hidden="true">*</span></label>
+            <p className="hint institution-search-helper" id="institution-search-hint">{t('portal:submitInterest.lookup.hint')}</p>
             <div className="institution-search-control">
-              <input className="input" id="institution_search" name="institution_search" type="search" value={values.fdic_certificate_number} onChange={updateCertificate} placeholder={t('public:submitInterest.lookup.placeholder')} autoComplete="off" inputMode="numeric" aria-describedby={`institution-search-hint${errors.institution_search ? ' institution-search-error' : ''}`} aria-invalid={errors.institution_search ? 'true' : undefined} />
-              <Button type="button" variant="secondary" disabled={lookupBusy || busy} onClick={verifyFdic}>{lookupBusy ? t('public:submitInterest.lookup.checking') : t('public:submitInterest.lookup.action')}</Button>
+              <input className="input" id="institution_search" name="institution_search" type="search" value={values.fdic_certificate_number} onChange={updateCertificate} placeholder={t('portal:submitInterest.lookup.placeholder')} autoComplete="off" inputMode="numeric" aria-describedby={`institution-search-hint${errors.institution_search ? ' institution-search-error' : ''}`} aria-invalid={errors.institution_search ? 'true' : undefined} />
+              <Button type="button" variant="secondary" disabled={lookupBusy || busy} onClick={verifyFdic}>{lookupBusy ? t('portal:submitInterest.lookup.checking') : t('portal:submitInterest.lookup.action')}</Button>
             </div>
-            <div className="institution-search-state" role="status" aria-live="polite">{lookupBusy && <><span className="spinner" aria-hidden="true" /><span>{t('public:submitInterest.lookup.searching')}</span></>}</div>
+            <div className="institution-search-state" role="status" aria-live="polite">{lookupBusy && <><span className="spinner" aria-hidden="true" /><span>{t('portal:submitInterest.lookup.searching')}</span></>}</div>
             {errors.institution_search && <p className="field-error" id="institution-search-error">{errors.institution_search}</p>}
           </div>
 
           {bankMatch && <section className="card span-2 selected-institution" aria-labelledby="selected-institution-heading">
-            <div className="selected-institution-head"><div className="selected-institution-title"><h2 id="selected-institution-heading">{t('public:submitInterest.lookup.selectedTitle')}</h2><strong className="selected-institution-name">{bankMatch.legal_name}</strong>{bankMatch.headquarters && <p className="selected-institution-sub">{bankMatch.headquarters}</p>}</div><StatusBadge tone="success">{t('public:submitInterest.lookup.validated')}</StatusBadge></div>
-            <dl className="selected-institution-meta"><div><dt>{t('public:submitInterest.lookup.registry')}</dt><dd>{t('public:submitInterest.lookup.fdicRegistry')}</dd></div><div><dt>{t('public:submitInterest.fields.fdic.label')}</dt><dd>{bankMatch.fdic_certificate_number}</dd></div></dl>
-            <div className="actions"><Button type="button" variant="secondary" onClick={changeInstitution}>{t('public:submitInterest.lookup.change')}</Button></div>
+            <div className="selected-institution-head"><div className="selected-institution-title"><h2 id="selected-institution-heading">{t('portal:submitInterest.lookup.selectedTitle')}</h2><strong className="selected-institution-name">{bankMatch.legal_name}</strong>{bankMatch.headquarters && <p className="selected-institution-sub">{bankMatch.headquarters}</p>}</div><StatusBadge tone="success">{t('portal:submitInterest.lookup.validated')}</StatusBadge></div>
+            <dl className="selected-institution-meta"><div><dt>{t('portal:submitInterest.lookup.registry')}</dt><dd>{t('portal:submitInterest.lookup.fdicRegistry')}</dd></div><div><dt>{t('portal:submitInterest.fields.fdic.label')}</dt><dd>{bankMatch.fdic_certificate_number}</dd></div></dl>
+            <div className="actions"><Button type="button" variant="secondary" onClick={changeInstitution}>{t('portal:submitInterest.lookup.change')}</Button></div>
           </section>}
 
           {bankMatch && <InterestField className="span-2" field={websiteField} value={values.website} error={errors.website} onChange={update} />}
@@ -259,8 +259,8 @@ export default function SubmitInterestPage() {
 
         {contactFields.map((field) => <InterestField key={field.name} field={field} value={values[field.name]} error={errors[field.name]} onChange={update} />)}
       </div>
-      <div className="actions"><Button disabled={busy || lookupBusy || unsupported}>{busy ? t('public:submitInterest.sending') : t('public:submitInterest.submit')}</Button></div>
-      <p className="submission-note">{t('public:submitInterest.requiredNote')}</p>
+      <div className="actions"><Button disabled={busy || lookupBusy || unsupported}>{busy ? t('portal:submitInterest.sending') : t('portal:submitInterest.submit')}</Button></div>
+      <p className="submission-note">{t('portal:submitInterest.requiredNote')}</p>
     </form>
   </main></div>
 }

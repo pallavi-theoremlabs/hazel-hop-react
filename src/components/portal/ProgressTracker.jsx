@@ -10,9 +10,14 @@ export const STAGES = [
 ]
 
 const PROGRESS_STAGES = [
-  ...STAGES,
-  ['ESIGN', 'stages.esign', 'esign'],
-  ['ACCOUNT_OPENING', 'stages.accountOpening', 'account-opening'],
+  ['ELIGIBILITY', 'stages.eligibility'],
+  ['REGISTRATION', 'stages.registration'],
+  ['NDA', 'stages.nda'],
+  ['DOCUMENTS', 'stages.documents'],
+  ['RISK_QUESTIONS', 'stages.riskQuestions'],
+  ['HAZEL_REVIEW', 'stages.hazelReview'],
+  ['ESIGN', 'stages.esign'],
+  ['ACCOUNT_OPENING', 'stages.accountOpening'],
 ]
 
 export const stageIndex = (stage) => {
@@ -23,7 +28,7 @@ export const stageIndex = (stage) => {
 
 export default function ProgressTracker({ currentStage }) {
   const { t } = useTranslation('onboarding')
-  const current = stageIndex(currentStage)
+  const current = progressIndex(currentStage)
   return (
     <div className="tracker" aria-label="Onboarding progress">
       {PROGRESS_STAGES.map(([key, labelKey], index) => (
@@ -34,4 +39,14 @@ export default function ProgressTracker({ currentStage }) {
       ))}
     </div>
   )
+}
+
+function progressIndex(stage) {
+  if (stage === 'NDA_PENDING') return 2
+  if (['NDA_ACCEPTED', 'INSTITUTION_PROFILE', 'DOCUMENTS'].includes(stage)) return 3
+  if (['DUE_DILIGENCE', 'RISK_QUESTIONS'].includes(stage)) return 4
+  if (stage === 'HAZEL_REVIEW') return 5
+  if (stage === 'ESIGN') return 6
+  if (stage === 'ACCOUNT_OPENING') return 7
+  return 2
 }

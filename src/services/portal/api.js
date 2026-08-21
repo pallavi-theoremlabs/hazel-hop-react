@@ -1,7 +1,24 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+// ?? not ||: an empty VITE_API_BASE_URL means "same origin", which is what the
+// Databricks Apps deploy uses. || treats '' as falsy and would rewrite that back
+// to localhost, shipping a bundle that sends every request to the user's own
+// machine. The unset case is caught at build time by scripts/check-env.mjs; the
+// default below is only for `npm run dev`.
+import { integrationInstitutionId } from './integrationContext'
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+const INTEGRATION_CONTEXT_KEY = 'hazel.integration.institution_id'
+
+function currentInstitutionId() {
+  const fromHandoff = integrationInstitutionId(window.location.search)
+  if (fromHandoff) sessionStorage.setItem(INTEGRATION_CONTEXT_KEY, fromHandoff)
+  return fromHandoff || sessionStorage.getItem(INTEGRATION_CONTEXT_KEY) || ''
+}
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, options)
+  const institutionId = currentInstitutionId()
+  const headers = new Headers(options.headers || {})
+  if (institutionId) headers.set('X-Hazel-Integration-Institution-Id', institutionId)
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
   if (response.status === 204) return null
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
@@ -21,8 +38,8 @@ const jsonOptions = (method, data) => ({
 })
 
 export const getCase = (caseId) => request(`/api/cases/${caseId}`)
-export const lookupBankByFdic = (fdicCertificateNumber) => request(`/api/public/banks/${encodeURIComponent(fdicCertificateNumber)}`)
-export const submitInterest = (data) => request('/api/public/submit-interest', jsonOptions('POST', data))
+export const lookupBankByFdic = (fdicCertificateNumber) => request(`/api/banks/${encodeURIComponent(fdicCertificateNumber)}`)
+export const submitInterest = (data) => request('/api/submit-interest', jsonOptions('POST', data))
 export const createDevCase = (data) => request('/api/dev/create-case', jsonOptions('POST', data))
 export const resetDevCase = (caseId) => request(`/api/dev/reset-case/${caseId}`, { method: 'POST' })
 export const createDevClarification = (caseId, data) => request(`/api/dev/cases/${caseId}/hazel-review/clarification`, jsonOptions('POST', data))

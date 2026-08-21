@@ -2,10 +2,10 @@ import React from "react";
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useCaseContext } from '../App'
-import Button from '../components/Button'
-import PageHeader from '../components/PageHeader'
-import { completeInstitutionProfile, getInstitutionProfileQuestions, saveInstitutionProfileResponses } from '../services/api'
+import { useCaseContext } from './CaseApp'
+import Button from '../../components/shared/Button'
+import PageHeader from '../../components/portal/PageHeader'
+import { completeInstitutionProfile, getInstitutionProfileQuestions, saveInstitutionProfileResponses } from '../../services/portal/api'
 
 const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
 

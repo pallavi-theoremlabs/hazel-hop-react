@@ -1,22 +1,66 @@
 {
-  "landing": {
-    "homeLabel": "Hazel Network home",
-    "brand": "Hazel Network",
-    "navigationLabel": "Public navigation",
-    "howItWorks": "How Hazel works",
-    "memberPortal": "Member portal",
-    "eyebrow": "Bank-led digital money",
-    "title": "Move money forward, with banks at the center.",
-    "newTitle": "New to Hazel?",
-    "newDescription": "Submit an institution inquiry to begin the eligibility review. Submitting an inquiry does not create a portal account.",
-    "action": "Join Hazel",
-    "benefitsEyebrow": "A coordinated path to launch",
-    "benefitsTitle": "One Hazel experience from interest to production.",
-    "benefits": [
-      { "title": "Bank-first onboarding", "description": "Eligibility, due diligence, account setup, technical readiness, and launch are presented as one coherent journey." },
-      { "title": "Clear responsibilities", "description": "Each step identifies what your institution needs to do and what Hazel is reviewing." },
-      { "title": "Designed for control", "description": "Role-based tasks, document requests, approvals, and go-live controls keep progress visible." }
-    ]
+  "integrationHome": {
+    "eyebrow": "Integration app",
+    "title": "Open a Hazel onboarding case",
+    "description": "Start with Submit Interest for the normal flow, or reopen a real case here using its case and institution identifiers.",
+    "caseId": "Case ID",
+    "institutionId": "Institution ID",
+    "openCase": "Open case",
+    "invalidContext": "Enter valid UUID values for both the case and institution.",
+    "note": "This integration app does not authenticate users or create an account, session, credential, or token."
+  },
+  "signIn": {
+    "title": "Sign in to Hazel",
+    "description": "Use the registered work email and password for your existing Hazel account.",
+    "email": "Registered work email",
+    "password": "Password",
+    "forgot": "Forgot password?",
+    "action": "Sign in",
+    "back": "Back",
+    "show": "Show",
+    "hide": "Hide",
+    "unavailableTitle": "Sign in is not connected yet.",
+    "unavailable": "Microsoft External ID authentication is not enabled for this frontend-only prototype-parity page.",
+    "resetUnavailable": "Password reset will be available when Microsoft External ID authentication is integrated.",
+    "integrationNote": "Authentication is unavailable in this frontend-only review state; no credentials are submitted."
+  },
+  "createAccount": {
+    "title": "Create your Hazel account",
+    "description": "Create a password to securely access the Hazel Network.",
+    "fields": {
+      "password": {
+        "label": "Create password"
+      },
+      "confirmPassword": {
+        "label": "Confirm password"
+      }
+    },
+    "requirements": {
+      "minLength": "At least 12 characters",
+      "uppercase": "One uppercase letter",
+      "lowercase": "One lowercase letter",
+      "number": "One number",
+      "symbol": "One symbol"
+    },
+    "actions": {
+      "show": "Show",
+      "hide": "Hide",
+      "create": "Create account",
+      "creating": "Creating account…",
+      "continueOnboarding": "Continue onboarding"
+    },
+    "testHandoff": {
+      "label": "Test environment only",
+      "title": "Review the Create Account step",
+      "description": "Continuing uses the real inquiry case for onboarding testing. No account, credential, authenticated session, or token is created."
+    },
+    "validation": {
+      "errorTitle": "There is a problem",
+      "passwordRequired": "Create a password.",
+      "summary": "Create a password that meets every requirement.",
+      "confirmationRequired": "Confirm your password.",
+      "mismatch": "Enter the same password again."
+    }
   },
   "submitInterest": {
     "eyebrow": "For regulated institutions",
@@ -32,10 +76,10 @@
     "completeDescription": "A Hazel team member will reach out soon with more information on next steps.",
     "unsupportedTitle": "Online verification is currently available for banks only.",
     "unsupportedDescription": "Hazel does not yet have an integrated registry lookup for this institution type. Online inquiries can currently be submitted for FDIC-verified banks.",
-    "integrationLabel": "Integration app",
-    "integrationTitle": "Continue onboarding",
-    "integrationDescription": "Open the real inquiry case directly in the member portal to test NDA and third-party integrations.",
-    "continueOnboarding": "Continue onboarding",
+    "devSimulation": "Test environment only",
+    "devTitle": "Continue the approved test path",
+    "devDescription": "This control is available only when the explicit test-environment gates are enabled.",
+    "openNda": "Open NDA",
     "fields": {
       "legalName": { "label": "Legal institution name", "hint": "Use the institution’s complete legal name." },
       "fdic": { "label": "FDIC certificate number" },
