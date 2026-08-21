@@ -52,13 +52,13 @@ app = FastAPI(title="Hazel HOP API", version="0.1.0", lifespan=lifespan)
 # with an UndefinedTable — failures that read like bugs in this service rather than
 # like work that has not been done yet. They are re-mounted as each is ported.
 #
-# What survives is the lookup that needs no database at all:
+# What survives is the public inquiry flow:
 #
 #     GET /api/banks/{cert}   ->  RAFA over HTTP  ->  JSON
+#     POST /api/submit-interest -> institution, user, case and RAFA rows
 #
-# which is the end-to-end path the UI's lookup button exercises. Its neighbour
-# POST /api/submit-interest does write to the missing tables and will fail;
-# that is expected and is the next thing to port.
+# The remaining case and developer routes stay parked until they are ported to
+# the same schema.
 app.include_router(public_router, dependencies=[Depends(require_proxy)])
 
 _PARKED = (cases_router, dev_router)  # noqa: F841 — named so the imports stay honest
