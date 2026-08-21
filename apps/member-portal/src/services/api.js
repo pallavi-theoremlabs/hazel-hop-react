@@ -3,12 +3,17 @@
 // to localhost, shipping a bundle that sends every request to the user's own
 // machine. The unset case is caught at build time by scripts/check-env.mjs; the
 // default below is only for `npm run dev`.
+import { isTestEnvironmentEnabled } from '../config/testEnvironment'
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
-const DEV_MODE = import.meta.env.DEV && import.meta.env.VITE_DEV_MODE === 'true'
+const TEST_ENVIRONMENT_ENABLED = isTestEnvironmentEnabled(
+  import.meta.env.VITE_HAZEL_ENVIRONMENT,
+  import.meta.env.VITE_DEV_MODE,
+)
 const DEV_CONTEXT_KEY = 'hazel.dev.institution_id'
 
 function developmentInstitutionId() {
-  if (!DEV_MODE) return ''
+  if (!TEST_ENVIRONMENT_ENABLED) return ''
   const fromHandoff = new URLSearchParams(window.location.search).get('dev_institution_id') || ''
   if (fromHandoff) sessionStorage.setItem(DEV_CONTEXT_KEY, fromHandoff)
   return fromHandoff || sessionStorage.getItem(DEV_CONTEXT_KEY) || ''

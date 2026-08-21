@@ -3,8 +3,12 @@ import { useTranslation } from 'react-i18next'
 import { NavLink, useLocation, useParams } from 'react-router-dom'
 import DeveloperTestControls from './DeveloperTestControls'
 import { stageIndex } from './ProgressTracker'
+import { isTestEnvironmentEnabled } from '../config/testEnvironment'
 
-const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
+const TEST_ENVIRONMENT_ENABLED = isTestEnvironmentEnabled(
+  import.meta.env.VITE_HAZEL_ENVIRONMENT,
+  import.meta.env.VITE_DEV_MODE,
+)
 
 const NAV_ITEMS = [
   { key: 'NDA_PENDING', labelKey: 'stages.nda', path: 'nda', substepsKey: 'navigation.ndaSubsteps' },
@@ -78,7 +82,7 @@ export default function AppShell({ caseData, refreshCase, children }) {
         <div className="side-foot">{t('common:navigation.prototypeFooter')}<br />{t('common:navigation.syntheticData')}</div>
       </aside>
       <main className="page" id="main-content">
-        {DEV_MODE && <DeveloperTestControls caseData={caseData} refreshCase={refreshCase} />}
+        {TEST_ENVIRONMENT_ENABLED && <DeveloperTestControls caseData={caseData} refreshCase={refreshCase} />}
         {children}
       </main>
     </div>

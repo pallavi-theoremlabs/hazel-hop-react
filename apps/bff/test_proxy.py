@@ -25,16 +25,17 @@ PUBLIC_ORIGIN = "https://frontend-hop.onrender.com"
 MEMBER_ORIGIN = "https://member-portal-c4k9.onrender.com"
 
 
-def request(headers=None):
+def request(headers=None, method="GET"):
     raw_headers = [
         (key.lower().encode(), value.encode()) for key, value in (headers or {}).items()
     ]
-    return Request({"type": "http", "method": "GET", "path": "/", "headers": raw_headers})
+    return Request({"type": "http", "method": method, "path": "/", "headers": raw_headers})
 
 
 class DevelopmentSessionTests(unittest.TestCase):
     def test_bridge_requires_mode_and_exact_onboarding_path(self):
         incoming = request({proxy.DEV_INSTITUTION_HEADER: INSTITUTION_ID})
+        post = request({proxy.DEV_INSTITUTION_HEADER: INSTITUTION_ID}, method="POST")
         path = f"/api/cases/{CASE_ID}"
 
         with patch.object(proxy, "HAZEL_DEV_MODE", False):
@@ -44,10 +45,22 @@ class DevelopmentSessionTests(unittest.TestCase):
                 proxy.resolve_session(incoming, path),
                 (INSTITUTION_ID, None, "MEMBER_ADMIN"),
             )
+            self.assertEqual(
+                proxy.resolve_session(post, f"{path}/coverbase/session"),
+                (INSTITUTION_ID, None, "MEMBER_ADMIN"),
+            )
+            self.assertEqual(
+                proxy.resolve_session(post, f"{path}/nda/accept"),
+                (INSTITUTION_ID, None, "MEMBER_ADMIN"),
+            )
+            self.assertIsNone(proxy.resolve_session(incoming, f"{path}/nda/accept"))
+            self.assertIsNone(proxy.resolve_session(post, path))
             self.assertIsNone(proxy.resolve_session(incoming, f"{path}/documents"))
 
     def test_bridge_rejects_invalid_institution_uuid(self):
-        incoming = request({proxy.DEV_INSTITUTION_HEADER: "not-a-uuid"})
+        incoming = request(
+            {proxy.DEV_INSTITUTION_HEADER: "not-a-uuid"}, method="POST"
+        )
         with patch.object(proxy, "HAZEL_DEV_MODE", True):
             with self.assertRaises(HTTPException) as raised:
                 proxy.resolve_session(incoming, f"/api/cases/{CASE_ID}/nda/accept")

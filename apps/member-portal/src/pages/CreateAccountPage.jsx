@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import Button from '../components/Button'
+import { isTestEnvironmentEnabled } from '../config/testEnvironment'
 import {
   PASSWORD_REQUIREMENTS,
   canBeginSubmission,
@@ -9,6 +11,12 @@ import {
   togglePasswordVisibility,
   validateCreateAccount,
 } from './createAccountState'
+import { testOnboardingDestination } from './testOnboardingContext'
+
+const TEST_ENVIRONMENT_ENABLED = isTestEnvironmentEnabled(
+  import.meta.env.VITE_HAZEL_ENVIRONMENT,
+  import.meta.env.VITE_DEV_MODE,
+)
 
 function PasswordField({
   children,
@@ -64,6 +72,8 @@ function PasswordField({
 
 export default function CreateAccountPage() {
   const { t } = useTranslation('public')
+  const { search } = useLocation()
+  const navigate = useNavigate()
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [passwordVisible, setPasswordVisible] = useState(false)
@@ -71,6 +81,9 @@ export default function CreateAccountPage() {
   const [errors, setErrors] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const errorSummaryRef = useRef(null)
+  const testDestination = TEST_ENVIRONMENT_ENABLED
+    ? testOnboardingDestination(search)
+    : null
 
   const requirementState = useMemo(() => passwordRequirementState(password), [password])
   const errorSignature = errors.map(({ field, messageKey }) => `${field}:${messageKey}`).join('|')
@@ -129,6 +142,10 @@ export default function CreateAccountPage() {
     setErrors(nextErrors)
 
     if (canBeginSubmission(nextErrors, submitting)) {
+      if (testDestination) {
+        navigate(testDestination)
+        return
+      }
       setSubmitting(true)
     }
   }
@@ -138,6 +155,14 @@ export default function CreateAccountPage() {
       <main id="main" className="auth-card">
         <h1>{t('createAccount.title')}</h1>
         <p className="lead">{t('createAccount.description')}</p>
+
+        {testDestination ? (
+          <section className="local-dev-simulation" aria-label={t('createAccount.testHandoff.label')}>
+            <span className="dev-label">{t('createAccount.testHandoff.label')}</span>
+            <h2>{t('createAccount.testHandoff.title')}</h2>
+            <p className="hint">{t('createAccount.testHandoff.description')}</p>
+          </section>
+        ) : null}
 
         {errors.length > 0 ? (
           <section className="error-summary" role="alert" tabIndex="-1" ref={errorSummaryRef}>
@@ -199,7 +224,9 @@ export default function CreateAccountPage() {
 
           <div className="actions">
             <Button type="submit" disabled={submitting}>
-              {submitting
+              {testDestination
+                ? t('createAccount.actions.continueOnboarding')
+                : submitting
                 ? t('createAccount.actions.creating')
                 : t('createAccount.actions.create')}
             </Button>

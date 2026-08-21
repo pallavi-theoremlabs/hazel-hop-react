@@ -32,9 +32,9 @@
     "completeDescription": "A Hazel team member will reach out soon with more information on next steps.",
     "unsupportedTitle": "Online verification is currently available for banks only.",
     "unsupportedDescription": "Hazel does not yet have an integrated registry lookup for this institution type. Online inquiries can currently be submitted for FDIC-verified banks.",
-    "devSimulation": "Local development only",
+    "devSimulation": "Test environment only",
     "devTitle": "Continue the approved test path",
-    "devDescription": "This control is available only in the local development build.",
+    "devDescription": "This control is available only when the explicit test-environment gates are enabled.",
     "continueOnboarding": "Continue onboarding",
     "fields": {
       "legalName": { "label": "Legal institution name", "hint": "Use the institution’s complete legal name." },

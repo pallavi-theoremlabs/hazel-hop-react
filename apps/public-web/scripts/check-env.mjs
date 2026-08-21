@@ -26,6 +26,8 @@ const mode = process.env.NODE_ENV || 'production'
 // so this sees the value the same way vite build will.
 const env = loadEnv(mode, process.cwd(), '')
 const value = env.VITE_API_BASE_URL
+const deploymentEnvironment = (env.VITE_HAZEL_ENVIRONMENT || '').trim().toLowerCase()
+const devMode = (env.VITE_DEV_MODE || '').trim().toLowerCase()
 
 if (value === undefined) {
   console.error(`
@@ -43,6 +45,17 @@ Either export it, or put it in apps/public-web/.env.
 
 const shown = value === '' ? '(empty -> same-origin)' : value
 console.log(`VITE_API_BASE_URL = ${shown}`)
+
+if (!['production', 'development', 'test'].includes(deploymentEnvironment)) {
+  console.error('\nVITE_HAZEL_ENVIRONMENT must be production, development, or test.\n')
+  process.exit(1)
+}
+if (!['true', 'false'].includes(devMode)) {
+  console.error('\nVITE_DEV_MODE must be explicitly true or false.\n')
+  process.exit(1)
+}
+console.log(`VITE_HAZEL_ENVIRONMENT = ${deploymentEnvironment}`)
+console.log(`VITE_DEV_MODE = ${devMode}`)
 
 const memberPortal = env.VITE_MEMBER_PORTAL_URL
 if (!memberPortal) {

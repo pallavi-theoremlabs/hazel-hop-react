@@ -70,10 +70,14 @@ HAZEL_DEV_MODE = (
     and os.getenv("HAZEL_DEV_MODE", "false").strip().lower() == "true"
 )
 DEV_INSTITUTION_HEADER = "X-Hazel-Dev-Institution-Id"
-DEV_ONBOARDING_PATH = re.compile(
-    r"^/api/cases/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:/nda/accept|/coverbase/session)?$"
+DEV_CASE_PATH = (
+    r"/api/cases/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 )
+DEV_ONBOARDING_ROUTES = {
+    "GET": re.compile(rf"^{DEV_CASE_PATH}$"),
+    "POST": re.compile(rf"^{DEV_CASE_PATH}(?:/nda/accept|/coverbase/session)$"),
+}
 
 # /api/dev/* is not forwarded. Those endpoints create and destroy synthetic cases,
 # and reset-case deletes a case's documents. They are already gated by
@@ -239,7 +243,8 @@ def resolve_session(
 
     # This is deliberately not authentication. It is a narrow development-only
     # tenant context for a real inquiry before External ID is implemented.
-    if HAZEL_DEV_MODE and DEV_ONBOARDING_PATH.fullmatch(target_path):
+    route_pattern = DEV_ONBOARDING_ROUTES.get(request.method.upper())
+    if HAZEL_DEV_MODE and route_pattern and route_pattern.fullmatch(target_path):
         raw = request.headers.get(DEV_INSTITUTION_HEADER, "").strip()
         if raw:
             try:
