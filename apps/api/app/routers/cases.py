@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from psycopg.types.json import Jsonb
 from starlette.concurrency import run_in_threadpool
 
+from app.config import settings
 from app.db import STAGES, connection, require_case, row_dict, update_stage, utc_now
 from app.storage import storage
 from app.models import (
@@ -37,6 +38,7 @@ from app.services.institution_profile_schema import (
 )
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
+canonical_router = APIRouter(prefix="/api/cases", tags=["development-onboarding"])
 ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx"}
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 logger = logging.getLogger("uvicorn.error")
@@ -322,99 +324,225 @@ def require_at_least(case, stage):
         raise HTTPException(409, f"Complete the prior onboarding stage before {stage.replace('_', ' ').title()}.")
 
 
-@router.get("/{case_id}")
+CANONICAL_STAGE_ORDER = (
+    "INQUIRY",
+    "ELIGIBILITY_SCREENING",
+    "NDA",
+    "RISK_ASSESSMENT",
+    "VANTAGE_REVIEW",
+    "ACCOUNT_OPENING",
+    "COMPLETED",
+)
+
+PORTAL_STAGE = {
+    "INQUIRY": "NDA_PENDING",
+    "ELIGIBILITY_SCREENING": "NDA_PENDING",
+    "NDA": "NDA_PENDING",
+    "VANTAGE_REVIEW": "HAZEL_REVIEW",
+    "ACCOUNT_OPENING": "HAZEL_REVIEW",
+    "COMPLETED": "HAZEL_REVIEW",
+}
+
+
+def canonical_stage_at_least(stage: str, required: str) -> bool:
+    try:
+        return CANONICAL_STAGE_ORDER.index(stage) >= CANONICAL_STAGE_ORDER.index(required)
+    except ValueError:
+        return False
+
+
+def canonical_coverbase_payload(case: dict) -> dict:
+    return {
+        "session_id": case.get("coverbase_session_id"),
+        "vendor_id": case.get("coverbase_vendor_id"),
+        "questionnaire_id": case.get("coverbase_questionnaire_id"),
+        "status": case.get("coverbase_session_status"),
+        "session_status": case.get("coverbase_session_status"),
+        "assessment_status": case.get("coverbase_assessment_status"),
+        "sync_status": case.get("coverbase_sync_status"),
+    }
+
+
+@canonical_router.get("/{case_id}")
 def get_case(case_id: str):
     with connection() as conn:
         case = get_or_404(conn, case_id)
-        submission = conn.execute(
-            "SELECT legal_name, contact_email FROM express_interest_submissions WHERE case_id = %s",
+        institution = conn.execute(
+            """SELECT i.legal_name,
+                      COALESCE(
+                        (SELECT u.email FROM "user" u
+                         WHERE u.institution_id = i.id AND u.role = 'MEMBER_ADMIN'
+                         ORDER BY u.created_at LIMIT 1),
+                        i.registration_contact_email
+                      ) AS primary_applicant_email
+               FROM institution i WHERE i.id = %s""",
+            (case["institution_id"],),
+        ).fetchone()
+        nda_transition = conn.execute(
+            """SELECT occurred_at FROM case_stage_transition
+               WHERE onboarding_case_id = %s AND from_stage = 'NDA'
+                 AND to_stage = 'RISK_ASSESSMENT'
+               ORDER BY occurred_at DESC LIMIT 1""",
             (case_id,),
         ).fetchone()
-        case["legal_name"] = submission["legal_name"] if submission else None
-        case["primary_applicant_email"] = submission["contact_email"] if submission else None
-        case["additional_information_required"] = bool(case["additional_information_required"])
-        case["esign_eligible"] = case["coverbase_status"] == "accepted"
+        canonical_stage = case["current_stage"]
+        case["canonical_current_stage"] = canonical_stage
+        case["current_stage"] = PORTAL_STAGE.get(canonical_stage, canonical_stage)
+        case["legal_name"] = institution["legal_name"] if institution else None
+        case["primary_applicant_email"] = (
+            institution["primary_applicant_email"] if institution else None
+        )
+        case["nda_accepted_at"] = (
+            nda_transition["occurred_at"] if nda_transition else None
+        )
+        # Compatibility fields for the current React shell. They are projections,
+        # not columns or writes to a second schema.
+        case["coverbase_status"] = str(case["coverbase_session_status"]).lower()
+        case["additional_information_required"] = (
+            case["decision_status"] == "MORE_INFO_REQUIRED"
+        )
+        case["esign_eligible"] = case["coverbase_assessment_status"] == "COMPLETED"
         return case
 
 
 async def ensure_coverbase_session(case_id: str):
     """Create one Coverbase session after NDA acceptance, never during public intake."""
     with connection() as conn:
-        case = get_or_404(conn, case_id)
-        if not case["nda_accepted_at"]:
+        case = row_dict(
+            conn.execute(
+                "SELECT * FROM onboarding_case WHERE id = %s FOR UPDATE", (case_id,)
+            ).fetchone()
+        )
+        if not case:
+            raise HTTPException(404, "Onboarding case not found")
+        if not canonical_stage_at_least(case["current_stage"], "RISK_ASSESSMENT"):
             raise HTTPException(409, "Accept the NDA before creating a Coverbase intake session.")
         if case["coverbase_session_id"]:
             logger.info("[Coverbase] reused session %s", case["coverbase_session_id"])
-            return {
-                "session_id": case["coverbase_session_id"],
-                "vendor_id": case["coverbase_vendor_id"],
-                "status": case["coverbase_status"] or "created",
-                "reused": True,
-            }
-        express_interest_row = conn.execute(
-            "SELECT * FROM express_interest_submissions WHERE case_id = %s", (case_id,)
+            return {**canonical_coverbase_payload(case), "reused": True}
+        if case["coverbase_sync_status"] == "IN_PROGRESS":
+            raise HTTPException(409, "Coverbase session creation is already in progress.")
+        institution = conn.execute(
+            """SELECT legal_name, institution_type, registration_contact_email
+               FROM institution WHERE id = %s""",
+            (case["institution_id"],),
         ).fetchone()
-        if not express_interest_row:
-            raise HTTPException(409, "Hazel Express Interest data is required before creating a Coverbase session.")
-        express_interest = express_interest_payload(express_interest_row)
+        if not institution:
+            raise HTTPException(409, "The case institution is required before creating a Coverbase session.")
+        profile = {
+            "legal_name": institution["legal_name"],
+            "institution_type": institution["institution_type"],
+            "contact_email": institution["registration_contact_email"],
+            # The canonical schema deliberately has no website column yet.
+            "website": "",
+        }
+        conn.execute(
+            """UPDATE onboarding_case
+               SET coverbase_session_status = 'IN_PROGRESS',
+                   coverbase_sync_status = 'IN_PROGRESS', updated_at = %s
+               WHERE id = %s""",
+            (utc_now(), case_id),
+        )
 
     try:
-        session = await coverbase_service.create_intake_session(case_id, express_interest, {})
+        session = await coverbase_service.create_intake_session(case_id, profile, {})
     except (httpx.HTTPError, RuntimeError) as exc:
         with connection() as conn:
             conn.execute(
-                "UPDATE onboarding_cases SET coverbase_status = %s, updated_at = %s WHERE id = %s",
-                ("error", utc_now(), case_id),
+                """UPDATE onboarding_case
+                   SET coverbase_session_status = 'NOT_CREATED',
+                       coverbase_sync_status = 'FAILED', updated_at = %s
+                   WHERE id = %s AND coverbase_session_id IS NULL""",
+                (utc_now(), case_id),
             )
         raise HTTPException(502, f"Coverbase intake session could not be created: {exc}") from exc
 
     session_id = session.get("id") or session.get("session_id")
     if not session_id:
+        with connection() as conn:
+            conn.execute(
+                """UPDATE onboarding_case
+                   SET coverbase_session_status = 'NOT_CREATED',
+                       coverbase_sync_status = 'FAILED', updated_at = %s
+                   WHERE id = %s AND coverbase_session_id IS NULL""",
+                (utc_now(), case_id),
+            )
         raise HTTPException(502, "Coverbase response did not include a session ID")
     with connection() as conn:
-        conn.execute(
-            """UPDATE onboarding_cases
-            SET coverbase_session_id = %s, coverbase_vendor_id = %s, coverbase_status = %s, updated_at = %s
-            WHERE id = %s AND coverbase_session_id IS NULL""",
+        stored = row_dict(conn.execute(
+            """UPDATE onboarding_case
+            SET coverbase_session_id = %s, coverbase_vendor_id = %s,
+                coverbase_questionnaire_id = %s,
+                coverbase_session_status = 'CREATED',
+                coverbase_assessment_status = 'NOT_STARTED',
+                coverbase_sync_status = 'SYNCED',
+                coverbase_last_synced_at = %s, updated_at = %s
+            WHERE id = %s AND coverbase_session_id IS NULL
+            RETURNING *""",
             (
                 session_id,
                 session.get("vendor_id"),
-                session.get("status", "processing"),
+                settings.coverbase_questionnaire_id,
+                utc_now(),
                 utc_now(),
                 case_id,
             ),
-        )
-        stored = get_or_404(conn, case_id)
+        ).fetchone())
+        if not stored:
+            stored = get_or_404(conn, case_id)
     if stored["coverbase_session_id"] != session_id:
         logger.warning("Concurrent Coverbase session creation detected for case %s", case_id)
         logger.info("[Coverbase] reused session %s", stored["coverbase_session_id"])
         return {
             "session_id": stored["coverbase_session_id"],
             "vendor_id": stored["coverbase_vendor_id"],
-            "status": stored["coverbase_status"],
+            "status": stored["coverbase_session_status"],
             "reused": True,
         }
     logger.info("[Coverbase] created session %s", session_id)
-    try:
-        await coverbase_service.generate_institution_profile_questions(
-            session_id, express_interest.get("legal_name") or ""
-        )
-    except (httpx.HTTPError, RuntimeError, ValueError) as exc:
-        logger.warning(
-            "Coverbase session %s was created, but Institution Profile generation is not ready: %s",
-            session_id,
-            exc,
-        )
-    return session
+    return {
+        **session,
+        **canonical_coverbase_payload(stored),
+        "provider_status": session.get("status"),
+        "reused": False,
+    }
 
 
-@router.post("/{case_id}/nda/accept")
+@canonical_router.post("/{case_id}/nda/accept")
 async def accept_nda(case_id: str):
     with connection() as conn:
-        case = get_or_404(conn, case_id)
-        now = case["nda_accepted_at"] or utc_now()
-        update_stage(conn, case_id, "INSTITUTION_PROFILE", nda_accepted_at=now)
-    response = {"accepted_at": now, "current_stage": "INSTITUTION_PROFILE"}
+        case = row_dict(
+            conn.execute(
+                "SELECT * FROM onboarding_case WHERE id = %s FOR UPDATE", (case_id,)
+            ).fetchone()
+        )
+        if not case:
+            raise HTTPException(404, "Onboarding case not found")
+        if case["current_status"] == "DECLINED":
+            raise HTTPException(409, "A declined inquiry cannot accept the NDA.")
+        if not canonical_stage_at_least(case["current_stage"], "NDA"):
+            raise HTTPException(409, "Eligibility screening must complete before NDA acceptance.")
+        if case["current_stage"] == "NDA":
+            conn.execute(
+                "SELECT set_config('hop.transition_reason', %s, true)",
+                ("Development NDA acceptance",),
+            )
+            conn.execute(
+                """UPDATE onboarding_case
+                   SET current_stage = 'RISK_ASSESSMENT',
+                       current_status = 'IN_PROGRESS', updated_at = %s
+                   WHERE id = %s""",
+                (utc_now(), case_id),
+            )
+        transition = conn.execute(
+            """SELECT occurred_at FROM case_stage_transition
+               WHERE onboarding_case_id = %s AND from_stage = 'NDA'
+                 AND to_stage = 'RISK_ASSESSMENT'
+               ORDER BY occurred_at DESC LIMIT 1""",
+            (case_id,),
+        ).fetchone()
+        now = transition["occurred_at"] if transition else utc_now()
+    response = {"accepted_at": now, "current_stage": "RISK_ASSESSMENT"}
     try:
         session = await ensure_coverbase_session(case_id)
         response.update(
@@ -427,7 +555,7 @@ async def accept_nda(case_id: str):
     return response
 
 
-@router.post("/{case_id}/coverbase/session")
+@canonical_router.post("/{case_id}/coverbase/session")
 async def create_coverbase_session(case_id: str):
     return await ensure_coverbase_session(case_id)
 

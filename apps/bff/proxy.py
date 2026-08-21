@@ -36,7 +36,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
+from uuid import UUID
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -62,6 +64,16 @@ DATABRICKS_APP_URL = _required("DATABRICKS_APP_URL")
 # without it, so a mismatch here presents as a uniform 401 rather than as partial
 # breakage.
 HAZEL_PROXY_KEY = _required("HAZEL_PROXY_KEY")
+DEPLOYMENT_ENVIRONMENT = os.getenv("HAZEL_ENVIRONMENT", "production").strip().lower()
+HAZEL_DEV_MODE = (
+    DEPLOYMENT_ENVIRONMENT in {"development", "test"}
+    and os.getenv("HAZEL_DEV_MODE", "false").strip().lower() == "true"
+)
+DEV_INSTITUTION_HEADER = "X-Hazel-Dev-Institution-Id"
+DEV_ONBOARDING_PATH = re.compile(
+    r"^/api/cases/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:/nda/accept|/coverbase/session)?$"
+)
 
 # /api/dev/* is not forwarded. Those endpoints create and destroy synthetic cases,
 # and reset-case deletes a case's documents. They are already gated by
@@ -97,6 +109,7 @@ STRIPPED_REQUEST_HEADERS = {
     "x-hazel-institution-id",
     "x-hazel-user-id",
     "x-hazel-role",
+    "x-hazel-dev-institution-id",
 }
 
 STRIPPED_RESPONSE_HEADERS = {
@@ -189,11 +202,13 @@ async def access_token(client: httpx.AsyncClient) -> str:
         return token
 
 
-def resolve_session(request: Request) -> tuple[str, str | None, str] | None:
+def resolve_session(
+    request: Request, target_path: str
+) -> tuple[str, str | None, str] | None:
     """The (institution_id, user_id, role) this request acts as.
 
     Placeholder for the Entra External ID integration: validate the caller's token,
-    look up the matching hazel.app_user by external_identity_id — which is
+    look up the matching hazel."user" by external_identity_id — which is
     documented as the Entra object id, so the row and the token subject are the
     same identity — and return its institution and role.
 
@@ -203,7 +218,23 @@ def resolve_session(request: Request) -> tuple[str, str | None, str] | None:
     routes: the App answers 401 when the headers are absent, and that is the
     behaviour to keep.
     """
-    return getattr(request.state, "session", None)
+    authenticated = getattr(request.state, "session", None)
+    if authenticated:
+        return authenticated
+
+    # This is deliberately not authentication. It is a narrow development-only
+    # tenant context for a real inquiry before External ID is implemented.
+    if HAZEL_DEV_MODE and DEV_ONBOARDING_PATH.fullmatch(target_path):
+        raw = request.headers.get(DEV_INSTITUTION_HEADER, "").strip()
+        if raw:
+            try:
+                institution_id = str(UUID(raw))
+            except ValueError as exc:
+                raise HTTPException(
+                    400, f"{DEV_INSTITUTION_HEADER} is not a valid UUID"
+                ) from exc
+            return institution_id, None, "MEMBER_ADMIN"
+    return None
 
 
 @app.api_route(
@@ -222,7 +253,7 @@ async def forward(path: str, request: Request):
     }
     headers["X-Hazel-Proxy-Key"] = HAZEL_PROXY_KEY
 
-    session = resolve_session(request)
+    session = resolve_session(request, target_path)
     if session:
         institution_id, user_id, role = session
         headers["X-Hazel-Institution-Id"] = institution_id
