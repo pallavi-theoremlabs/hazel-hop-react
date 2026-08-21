@@ -117,7 +117,7 @@ EXPECTED = [
     # part of this schema, and is the one table with no RLS. fingerprint.py excludes it
     # for the same reason. Counting it would make every number here wrong by one.
     ("tables",     7,  "SELECT count(*) FROM information_schema.tables WHERE table_schema='hazel' AND table_name <> 'schema_migrations'"),
-    ("columns",    80, "SELECT count(*) FROM information_schema.columns WHERE table_schema='hazel' AND table_name <> 'schema_migrations'"),
+    ("columns",    83, "SELECT count(*) FROM information_schema.columns WHERE table_schema='hazel' AND table_name <> 'schema_migrations'"),
     ("FKs",        9,  "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='hazel' AND contype='f'"),
     ("CHECKs",     26, "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='hazel' AND contype='c'"),
     ("indexes",    26, "SELECT count(*) FROM pg_indexes WHERE schemaname='hazel' AND tablename <> 'schema_migrations'"),

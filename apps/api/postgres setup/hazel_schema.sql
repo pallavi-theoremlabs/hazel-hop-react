@@ -64,6 +64,10 @@ CREATE TABLE hazel.institution (
   registration_contact_email text NOT NULL,
   created_at                 timestamptz NOT NULL DEFAULT now(),
   updated_at                 timestamptz NOT NULL DEFAULT now(),
+  -- Added by alter/2026-08-21_inquiry_contact_fields.sql. Declared last rather
+  -- than beside the other institution attributes so a fresh install produces the
+  -- same ordinal order as the deployed table.
+  website                    text,
   CONSTRAINT ck_institution_type CHECK (institution_type IN
     ('NATIONAL_BANK','STATE_MEMBER_BANK','STATE_NONMEMBER_BANK',
      'SAVINGS_INSTITUTION','CREDIT_UNION','TRUST_COMPANY','OTHER')),
@@ -92,6 +96,10 @@ CREATE TABLE hazel."user" (
   role                 text NOT NULL,
   created_at           timestamptz NOT NULL DEFAULT now(),
   updated_at           timestamptz NOT NULL DEFAULT now(),
+  -- Added by alter/2026-08-21_inquiry_contact_fields.sql, in that order, so a
+  -- fresh install matches the deployed ordinal order.
+  phone                text,
+  job_title            text,
   CONSTRAINT uq_user_external_identity UNIQUE (external_identity_id),
   CONSTRAINT uq_user_email             UNIQUE (email),
   CONSTRAINT ck_user_role CHECK (role IN
@@ -456,7 +464,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA hazel TO hop_app;
 -- institution: no UPDATE on rssd_id
 GRANT SELECT, INSERT, DELETE ON hazel.institution TO hop_app;
 GRANT UPDATE (legal_name, fdic_certificate, institution_type, status,
-              registration_contact_email, updated_at)
+              registration_contact_email, website, updated_at)
   ON hazel.institution TO hop_app;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON hazel."user"   TO hop_app;
