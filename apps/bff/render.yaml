@@ -13,7 +13,7 @@
 # is attempted. The proxy holds the secret and mints the token server-side.
 #
 # The SPA and this tier are separate Render services on separate origins, so the
-# browser's call here is cross-origin and FRONTEND_ORIGIN below has to answer its
+# browser's call here is cross-origin and FRONTEND_ORIGINS below has to answer its
 # preflight. The hop from here to the App is server-to-server, carries no Origin
 # header, and needs no CORS at either end.
 
@@ -45,15 +45,17 @@ services:
       - key: DATABRICKS_APP_URL
         value: https://hazel-api-7474644508009163.aws.databricksapps.com
 
-      # The SPA's origin: scheme and host, no path and no trailing slash, compared
-      # verbatim against the browser's Origin header.
+      # The two SPA origins: scheme and host, no path and no trailing slash,
+      # comma-separated and compared verbatim against the browser's Origin
+      # header. proxy.py still accepts the historical singular FRONTEND_ORIGIN
+      # as a fallback for manually managed services during migration.
       #
       # Absence is not fatal by design, because a same-origin deployment genuinely
       # needs no CORS (proxy.py:141-148). That makes this the one setting here whose
       # omission passes every server-side check: the deploy goes green, /healthz
       # answers, curl works, and only the browser console shows the failure.
-      - key: FRONTEND_ORIGIN
-        value: https://frontend-hop.onrender.com
+      - key: FRONTEND_ORIGINS
+        value: https://frontend-hop.onrender.com,https://member-portal-c4k9.onrender.com
 
       # sync: false means Render prompts for the value and never stores it in git.
       # The service principal's credentials — the same one the App runs as.

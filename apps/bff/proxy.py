@@ -19,7 +19,7 @@ So the token is minted here, server-side, where the secret can live.
 The browser talks only to this tier, never to the App. Whether that is same-origin
 depends on how it is deployed: served from one host alongside the SPA it is, and
 no CORS is involved; deployed as its own service — which is what Render does — it
-is not, and FRONTEND_ORIGIN below has to name the SPA's origin so the preflight
+is not, and FRONTEND_ORIGINS below has to name each SPA origin so the preflight
 is answered. The App itself still needs no CORS either way, because this hop is
 server-to-server and carries no Origin header.
 
@@ -137,9 +137,23 @@ app = FastAPI(title="Hazel HOP proxy")
 # The App is still not reachable from a browser directly — it sits behind the
 # Databricks auth proxy, which rejects the unauthenticated preflight. This makes
 # the *proxy* callable from the SPA, which is the only hop that should be.
-FRONTEND_ORIGINS = [
-    o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()
-]
+def configured_frontend_origins() -> list[str]:
+    """Return the explicit browser-origin allowlist.
+
+    FRONTEND_ORIGINS is the canonical setting. FRONTEND_ORIGIN remains a
+    fallback so existing deployments can move to the plural name without a
+    flag day. Both accept comma-separated values; duplicates are removed while
+    preserving the configured order.
+    """
+    raw_origins = os.getenv("FRONTEND_ORIGINS") or os.getenv("FRONTEND_ORIGIN", "")
+    origins = (origin.strip() for origin in raw_origins.split(","))
+    allowlist = list(dict.fromkeys(origin for origin in origins if origin))
+    if "*" in allowlist:
+        raise RuntimeError("FRONTEND_ORIGINS must be an explicit allowlist, not '*'")
+    return allowlist
+
+
+FRONTEND_ORIGINS = configured_frontend_origins()
 if FRONTEND_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -156,7 +170,8 @@ else:
     # start would break that topology. Logged because the symptom otherwise shows
     # up only in a browser console, as a failure that looks like the API is down.
     logger.warning(
-        "[proxy] FRONTEND_ORIGIN is unset; no CORS headers will be sent. "
+        "[proxy] FRONTEND_ORIGINS and FRONTEND_ORIGIN are unset; "
+        "no CORS headers will be sent. "
         "Browser calls from a different origin will fail their preflight."
     )
 

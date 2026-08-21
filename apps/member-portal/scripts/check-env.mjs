@@ -9,8 +9,9 @@
  * Unset and empty are different on purpose:
  *
  *   unset  -> build fails (this script)
- *   ""     -> same-origin, which is what the Databricks Apps deploy wants
- *   "http://localhost:8000" -> explicit local backend
+ *   ""     -> same-origin
+ *   "http://localhost:8000" -> explicit local BFF
+ *   "https://<render-bff-host>" -> the shared production BFF
  *
  * which is also why api.js uses ?? rather than ||: an empty string is falsy, and
  * || would quietly rewrite a deliberate same-origin build back to localhost.
@@ -29,10 +30,11 @@ VITE_API_BASE_URL is not set, so this build would hardcode http://localhost:8000
 into the shipped bundle.
 
 Set it to one of:
-  VITE_API_BASE_URL=            same-origin (Databricks Apps deploy)
-  VITE_API_BASE_URL=http://localhost:8000    local backend
+  VITE_API_BASE_URL=            same-origin
+  VITE_API_BASE_URL=http://localhost:8000    local BFF
+  VITE_API_BASE_URL=https://<render-bff-host>    shared production BFF
 
-Either export it, or put it in frontend/.env.
+Either export it, or put it in apps/member-portal/.env.
 `)
   process.exit(1)
 }

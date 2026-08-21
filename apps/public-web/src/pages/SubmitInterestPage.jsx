@@ -4,23 +4,25 @@ import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import StatusBadge from '../components/StatusBadge'
 import { lookupBankByFdic, submitInterest } from '../services/api'
+import { buildMemberPortalUrl } from '../services/memberPortalUrl'
 
 const DEV_MODE = import.meta.env.DEV && import.meta.env.VITE_DEV_MODE === 'true'
 
-// The API returns next_path as /case/{id}/nda, which belongs to the member
-// portal — a different app on a different origin. React Router cannot reach it,
-// so this is a whole-document navigation rather than a client-side one.
+// The eligible result belongs to the member portal — a different app on a
+// different origin. React Router cannot reach it, so this is a whole-document
+// navigation rather than a client-side one.
 //
 // Only ever used behind DEV_MODE, which is import.meta.env.DEV && VITE_DEV_MODE,
-// so a production build strips the caller entirely and never reads this. That is
-// why an unset value is not a build failure: production has no handoff to
-// configure. Left empty it falls back to a same-origin path, which fails visibly
-// in dev instead of silently sending the developer somewhere wrong.
-const MEMBER_PORTAL_URL = (import.meta.env.VITE_MEMBER_PORTAL_URL ?? '').replace(/\/$/, '')
-const openInMemberPortal = (nextPath, institutionId) => {
-  const handoff = new URL(`${MEMBER_PORTAL_URL}${nextPath}`, window.location.origin)
-  handoff.searchParams.set('dev_institution_id', institutionId)
-  window.location.assign(handoff.toString())
+// so production never exposes the temporary onboarding bridge. The real case,
+// institution and API-provided next path are carried as development context;
+// no token or authenticated state is created here.
+const MEMBER_PORTAL_URL = import.meta.env.VITE_MEMBER_PORTAL_URL
+const openInMemberPortal = (result) => {
+  window.location.assign(buildMemberPortalUrl(MEMBER_PORTAL_URL, '/create-account', {
+    case_id: result.case_id,
+    dev_institution_id: result.institution_id,
+    next_path: result.next_path,
+  }))
 }
 
 const EMPTY_VALUES = {
@@ -225,7 +227,7 @@ export default function SubmitInterestPage() {
         <span className="dev-label">{t('public:submitInterest.devSimulation')}</span>
         <h2>{t('public:submitInterest.devTitle')}</h2>
         <p className="hint">{t('public:submitInterest.devDescription')}</p>
-        <div className="actions"><Button onClick={() => openInMemberPortal(result.next_path, result.institution_id)}>{t('public:submitInterest.openNda')}</Button></div>
+        <div className="actions"><Button onClick={() => openInMemberPortal(result)}>{t('public:submitInterest.continueOnboarding')}</Button></div>
       </section>}
     </main></div>
   }
