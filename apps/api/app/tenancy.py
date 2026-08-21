@@ -19,9 +19,10 @@ this module:
   configuration, and a workspace user with CAN_USE would otherwise be able to
   assert any tenant they liked.
 
-* **The BFF names the tenant**, because it is what authenticated the end user.
-  This API has no user model of its own and does not attempt one; it takes an
-  org id from a caller it has just authenticated, and validates the shape.
+* **The BFF names the tenant.** In this throwaway integration deployment the
+  browser carries the institution id returned by Submit Interest and the BFF
+  forwards it only for the three mounted real-case routes. This is context, not
+  user authentication. The API validates its shape before establishing RLS.
 
 Nothing here weakens the database-side guarantee. Every tenant table is FORCE ROW
 LEVEL SECURITY (postgres setup/hazel_schema.sql) keyed on the hop.institution_id
@@ -66,11 +67,6 @@ VALID_ROLES = frozenset({
 # environment lookup. Empty means "not configured", which require_proxy() treats as
 # fatal rather than as permission to skip the check.
 PROXY_KEY = os.getenv("HAZEL_PROXY_KEY", "").strip()
-DEPLOYMENT_ENVIRONMENT = os.getenv("HAZEL_ENVIRONMENT", "production").strip().lower()
-DEV_MODE_ENABLED = (
-    DEPLOYMENT_ENVIRONMENT in {"development", "test"}
-    and os.getenv("HAZEL_DEV_MODE", "false").strip().lower() == "true"
-)
 
 # The tenant for the request currently being served.
 #
@@ -158,12 +154,11 @@ async def require_proxy(request: Request) -> None:
 
 
 async def require_tenant(request: Request) -> None:
-    """Authenticate the BFF and establish the session context for this request.
+    """Authenticate the BFF and establish the integration tenant context.
 
     The three values map onto the session contract hazel_schema.sql documents. The
-    BFF supplies them because it is what authenticated the end user against Entra —
-    hazel."user".external_identity_id is an Entra object id, so the user row and the
-    token subject are the same identity by construction.
+    BFF supplies them from the real Submit Interest handoff. No end-user identity
+    or authenticated session is claimed by this integration-only path.
     """
     await require_proxy(request)
 
@@ -185,16 +180,3 @@ async def require_tenant(request: Request) -> None:
         raise HTTPException(400, f"{ROLE_HEADER} is not a recognised role.")
 
     set_current_session(institution_id, user_id, role)
-
-
-async def require_dev_tenant(request: Request) -> None:
-    """Establish a tenant only for the temporary development onboarding slice.
-
-    This is intentionally a second gate in addition to the BFF's development
-    gate.  Production keeps HAZEL_DEV_MODE false, so the three temporarily
-    mounted member-onboarding endpoints appear not to exist until real External
-    ID session resolution is implemented.
-    """
-    if not DEV_MODE_ENABLED:
-        raise HTTPException(404, "Not found")
-    await require_tenant(request)

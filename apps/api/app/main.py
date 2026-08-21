@@ -11,7 +11,7 @@ from app.routers.cases import canonical_router, router as cases_router
 from app.routers.dev import router as dev_router
 from app.routers.public import router as public_router
 from app.storage import probe_storage, storage
-from app.tenancy import SYSTEM_SESSION, require_dev_tenant, require_proxy
+from app.tenancy import SYSTEM_SESSION, require_proxy, require_tenant
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -43,7 +43,7 @@ app = FastAPI(title="Hazel HOP API", version="0.1.0", lifespan=lifespan)
 # and configuring it anyway would suggest browser-direct access is a supported
 # topology when it is not. See app/tenancy.py.
 
-# The public router and a three-route development onboarding slice are mounted.
+# The public router and a three-route integration onboarding slice are mounted.
 #
 # postgres setup/hazel_schema.sql is the final schema, and it has no
 # institution_profiles, express_interest_submissions, due_diligence or
@@ -58,11 +58,11 @@ app = FastAPI(title="Hazel HOP API", version="0.1.0", lifespan=lifespan)
 #     POST /api/submit-interest -> institution, user, case and RAFA rows
 #
 # canonical_router contains only case load, NDA acceptance and Coverbase session
-# creation. require_dev_tenant makes all three 404 unless HAZEL_ENVIRONMENT is
-# development/test and HAZEL_DEV_MODE is explicitly true. The remaining case and
-# developer routes stay parked until they are ported to the same schema.
+# creation. The shared BFF supplies the real institution context and require_tenant
+# establishes the Lakebase RLS session. The remaining case and developer routes
+# stay parked until they are ported to the same schema.
 app.include_router(public_router, dependencies=[Depends(require_proxy)])
-app.include_router(canonical_router, dependencies=[Depends(require_dev_tenant)])
+app.include_router(canonical_router, dependencies=[Depends(require_tenant)])
 
 _PARKED = (cases_router, dev_router)  # noqa: F841 — named so the imports stay honest
 

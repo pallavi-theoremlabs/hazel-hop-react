@@ -3,29 +3,20 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import StatusBadge from '../components/StatusBadge'
-import { isTestEnvironmentEnabled } from '../config/testEnvironment'
 import { lookupBankByFdic, submitInterest } from '../services/api'
 import { buildMemberPortalUrl } from '../services/memberPortalUrl'
-
-const TEST_ENVIRONMENT_ENABLED = isTestEnvironmentEnabled(
-  import.meta.env.VITE_HAZEL_ENVIRONMENT,
-  import.meta.env.VITE_DEV_MODE,
-)
 
 // The eligible result belongs to the member portal — a different app on a
 // different origin. React Router cannot reach it, so this is a whole-document
 // navigation rather than a client-side one.
 //
-// Only used when the explicit build-time environment is development/test and
-// VITE_DEV_MODE is true. A production environment therefore remains closed even
-// if one variable is mis-set. The real case, institution and API-provided next
-// path are carried as test context; no token or authenticated state is created.
+// This throwaway integration app has no authentication step. The API-provided
+// path contains the real case id and the query parameter carries its real tenant
+// context. No account, token or authenticated state is created.
 const MEMBER_PORTAL_URL = import.meta.env.VITE_MEMBER_PORTAL_URL
 const openInMemberPortal = (result) => {
-  window.location.assign(buildMemberPortalUrl(MEMBER_PORTAL_URL, '/create-account', {
-    case_id: result.case_id,
-    dev_institution_id: result.institution_id,
-    next_path: result.next_path,
+  window.location.assign(buildMemberPortalUrl(MEMBER_PORTAL_URL, result.next_path, {
+    institution_id: result.institution_id,
   }))
 }
 
@@ -41,7 +32,7 @@ const EMPTY_VALUES = {
   phone: '',
 }
 
-const DEV_VALUES = {
+const INTEGRATION_VALUES = {
   ...EMPTY_VALUES,
   fdic_certificate_number: '12001',
   website: 'https://northstar.example',
@@ -106,7 +97,7 @@ export default function SubmitInterestPage() {
   const navigate = useNavigate()
   const contactFields = CONTACT_FIELDS.map((field) => fieldCopy(field, t, i18n))
   const institutionTypes = t('public:submitInterest.institutionTypes', { returnObjects: true })
-  const [values, setValues] = useState(TEST_ENVIRONMENT_ENABLED ? DEV_VALUES : EMPTY_VALUES)
+  const [values, setValues] = useState(INTEGRATION_VALUES)
   const [errors, setErrors] = useState({})
   const [requestError, setRequestError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -227,10 +218,10 @@ export default function SubmitInterestPage() {
       <StatusBadge tone="success">{t('public:submitInterest.receivedStatus')}</StatusBadge>
       <h1>{t('public:submitInterest.completeTitle')}</h1>
       <p className="lead">{t('public:submitInterest.completeDescription')}</p>
-      {TEST_ENVIRONMENT_ENABLED && result.eligible && result.next_path && <section className="local-dev-simulation" aria-label={t('public:submitInterest.devSimulation')}>
-        <span className="dev-label">{t('public:submitInterest.devSimulation')}</span>
-        <h2>{t('public:submitInterest.devTitle')}</h2>
-        <p className="hint">{t('public:submitInterest.devDescription')}</p>
+      {result.eligible && result.next_path && <section className="local-dev-simulation" aria-label={t('public:submitInterest.integrationLabel')}>
+        <span className="dev-label">{t('public:submitInterest.integrationLabel')}</span>
+        <h2>{t('public:submitInterest.integrationTitle')}</h2>
+        <p className="hint">{t('public:submitInterest.integrationDescription')}</p>
         <div className="actions"><Button onClick={() => openInMemberPortal(result)}>{t('public:submitInterest.continueOnboarding')}</Button></div>
       </section>}
     </main></div>

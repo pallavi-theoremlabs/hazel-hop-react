@@ -32,42 +32,42 @@ def request(headers=None, method="GET"):
     return Request({"type": "http", "method": method, "path": "/", "headers": raw_headers})
 
 
-class DevelopmentSessionTests(unittest.TestCase):
-    def test_bridge_requires_mode_and_exact_onboarding_path(self):
-        incoming = request({proxy.DEV_INSTITUTION_HEADER: INSTITUTION_ID})
-        post = request({proxy.DEV_INSTITUTION_HEADER: INSTITUTION_ID}, method="POST")
+class IntegrationSessionTests(unittest.TestCase):
+    def test_bridge_accepts_only_exact_onboarding_method_and_path(self):
+        incoming = request({proxy.INTEGRATION_INSTITUTION_HEADER: INSTITUTION_ID})
+        post = request(
+            {proxy.INTEGRATION_INSTITUTION_HEADER: INSTITUTION_ID}, method="POST"
+        )
         path = f"/api/cases/{CASE_ID}"
 
-        with patch.object(proxy, "HAZEL_DEV_MODE", False):
-            self.assertIsNone(proxy.resolve_session(incoming, path))
-        with patch.object(proxy, "HAZEL_DEV_MODE", True):
-            self.assertEqual(
-                proxy.resolve_session(incoming, path),
-                (INSTITUTION_ID, None, "MEMBER_ADMIN"),
-            )
-            self.assertEqual(
-                proxy.resolve_session(post, f"{path}/coverbase/session"),
-                (INSTITUTION_ID, None, "MEMBER_ADMIN"),
-            )
-            self.assertEqual(
-                proxy.resolve_session(post, f"{path}/nda/accept"),
-                (INSTITUTION_ID, None, "MEMBER_ADMIN"),
-            )
-            self.assertIsNone(proxy.resolve_session(incoming, f"{path}/nda/accept"))
-            self.assertIsNone(proxy.resolve_session(post, path))
-            self.assertIsNone(proxy.resolve_session(incoming, f"{path}/documents"))
+        self.assertEqual(
+            proxy.resolve_session(incoming, path),
+            (INSTITUTION_ID, None, "MEMBER_ADMIN"),
+        )
+        self.assertEqual(
+            proxy.resolve_session(post, f"{path}/coverbase/session"),
+            (INSTITUTION_ID, None, "MEMBER_ADMIN"),
+        )
+        self.assertEqual(
+            proxy.resolve_session(post, f"{path}/nda/accept"),
+            (INSTITUTION_ID, None, "MEMBER_ADMIN"),
+        )
+        self.assertIsNone(proxy.resolve_session(incoming, f"{path}/nda/accept"))
+        self.assertIsNone(proxy.resolve_session(post, path))
+        self.assertIsNone(proxy.resolve_session(incoming, f"{path}/documents"))
 
     def test_bridge_rejects_invalid_institution_uuid(self):
         incoming = request(
-            {proxy.DEV_INSTITUTION_HEADER: "not-a-uuid"}, method="POST"
+            {proxy.INTEGRATION_INSTITUTION_HEADER: "not-a-uuid"}, method="POST"
         )
-        with patch.object(proxy, "HAZEL_DEV_MODE", True):
-            with self.assertRaises(HTTPException) as raised:
-                proxy.resolve_session(incoming, f"/api/cases/{CASE_ID}/nda/accept")
+        with self.assertRaises(HTTPException) as raised:
+            proxy.resolve_session(incoming, f"/api/cases/{CASE_ID}/nda/accept")
         self.assertEqual(raised.exception.status_code, 400)
 
-    def test_browser_dev_header_is_always_stripped_before_forwarding(self):
-        self.assertIn("x-hazel-dev-institution-id", proxy.STRIPPED_REQUEST_HEADERS)
+    def test_browser_integration_header_is_always_stripped_before_forwarding(self):
+        self.assertIn(
+            "x-hazel-integration-institution-id", proxy.STRIPPED_REQUEST_HEADERS
+        )
 
 
 class CorsTests(unittest.TestCase):
@@ -93,6 +93,21 @@ class CorsTests(unittest.TestCase):
         response = self.preflight(MEMBER_ORIGIN)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["access-control-allow-origin"], MEMBER_ORIGIN)
+
+    def test_member_integration_context_header_is_allowed(self):
+        response = self.client.options(
+            f"/api/cases/{CASE_ID}",
+            headers={
+                "Origin": MEMBER_ORIGIN,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": proxy.INTEGRATION_INSTITUTION_HEADER,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            proxy.INTEGRATION_INSTITUTION_HEADER.lower(),
+            response.headers["access-control-allow-headers"].lower(),
+        )
 
     def test_unknown_origin_is_rejected(self):
         response = self.preflight("https://untrusted.example")

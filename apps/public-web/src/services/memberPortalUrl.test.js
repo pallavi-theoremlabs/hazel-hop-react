@@ -4,23 +4,19 @@ import { buildMemberPortalUrl } from './memberPortalUrl.js'
 
 const MEMBER_PORTAL = 'https://member-portal-c4k9.onrender.com'
 
-test('builds the production sign-in URL', () => {
+test('builds the member portal root URL', () => {
   assert.equal(
-    buildMemberPortalUrl(MEMBER_PORTAL, '/sign-in'),
-    'https://member-portal-c4k9.onrender.com/sign-in',
+    buildMemberPortalUrl(MEMBER_PORTAL, '/'),
+    'https://member-portal-c4k9.onrender.com/',
   )
 })
 
-test('builds a create-account handoff with the real case context', () => {
-  const result = buildMemberPortalUrl(MEMBER_PORTAL, '/create-account', {
-    case_id: 'case-123',
-    dev_institution_id: 'institution-456',
-    next_path: '/case/case-123/nda',
+test('builds a direct case handoff with the real institution context', () => {
+  const result = buildMemberPortalUrl(MEMBER_PORTAL, '/case/case-123/nda', {
+    institution_id: 'institution-456',
   })
   const url = new URL(result)
 
-  assert.equal(url.pathname, '/create-account')
-  assert.equal(url.searchParams.get('case_id'), 'case-123')
-  assert.equal(url.searchParams.get('dev_institution_id'), 'institution-456')
-  assert.equal(url.searchParams.get('next_path'), '/case/case-123/nda')
+  assert.equal(url.pathname, '/case/case-123/nda')
+  assert.equal(url.searchParams.get('institution_id'), 'institution-456')
 })

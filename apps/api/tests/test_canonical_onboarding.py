@@ -5,9 +5,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app.routers import cases
-from app import tenancy
-from fastapi import HTTPException
-from starlette.requests import Request
 
 
 CASE_ID = "11111111-1111-4111-8111-111111111111"
@@ -44,6 +41,7 @@ class CanonicalDatabase:
             "institution_type": "NATIONAL_BANK",
             "registration_contact_email": "applicant@example.com",
             "primary_applicant_email": "applicant@example.com",
+            "website": "https://canonical.example",
         }
         self.transition_at = None
         self.statements = []
@@ -167,16 +165,8 @@ class CanonicalOnboardingTests(unittest.IsolatedAsyncioTestCase):
         create_session.assert_awaited_once()
         request_profile = create_session.await_args.args[1]
         self.assertEqual(request_profile["legal_name"], "Canonical Community Bank")
-        self.assertEqual(request_profile["website"], "")
+        self.assertEqual(request_profile["website"], "https://canonical.example")
         self.assert_no_legacy_sql()
-
-    async def test_api_development_gate_defaults_closed(self):
-        request = Request({"type": "http", "method": "GET", "path": "/", "headers": []})
-        with patch.object(tenancy, "DEV_MODE_ENABLED", False):
-            with self.assertRaises(HTTPException) as raised:
-                await tenancy.require_dev_tenant(request)
-        self.assertEqual(raised.exception.status_code, 404)
-
 
 if __name__ == "__main__":
     unittest.main()
