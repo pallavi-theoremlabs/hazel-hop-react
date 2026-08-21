@@ -101,9 +101,24 @@ class SubmitInterestRafaTests(unittest.IsolatedAsyncioTestCase):
 
         institution = database.statement("INSERT INTO institution")
         self.assertEqual(institution[1][3:5], ("NATIONAL_BANK", "ONBOARDING"))
+        self.assertEqual(
+            institution[1][5:7],
+            ("applicant@example.com", "https://example.com"),
+        )
 
         user = database.statement('INSERT INTO "user"')
-        self.assertEqual(user[1][3:6], ("applicant@example.com", "Test", "Applicant"))
+        self.assertEqual(
+            user[1][3:8],
+            (
+                "applicant@example.com",
+                "Test",
+                "Applicant",
+                "555-0100",
+                "Officer",
+            ),
+        )
+        self.assertIn("phone = excluded.phone", user[0])
+        self.assertIn("job_title = excluded.job_title", user[0])
 
         case = database.statement("INSERT INTO onboarding_case")
         self.assertEqual(case[1][3:6], ("NDA", "AWAITING_MEMBER", "PENDING"))
