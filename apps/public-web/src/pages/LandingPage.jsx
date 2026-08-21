@@ -8,12 +8,12 @@ const MEMBER_PORTAL_URL = import.meta.env.VITE_MEMBER_PORTAL_URL
 export default function LandingPage() {
   const { t } = useTranslation('public')
   const benefits = t('landing.benefits', { returnObjects: true })
-  const signInUrl = buildMemberPortalUrl(MEMBER_PORTAL_URL, '/sign-in')
+  const memberPortalUrl = buildMemberPortalUrl(MEMBER_PORTAL_URL, '/')
 
   return <div className="public-landing">
     <header className="public-head">
       <Link className="public-brand" to="/" aria-label={t('landing.homeLabel')}><img src="/assets/hazel-network-logo.svg" alt={t('landing.brand')} /></Link>
-      <nav aria-label={t('landing.navigationLabel')}><a href="#how-hazel-works">{t('landing.howItWorks')}</a><a href={signInUrl}>{t('landing.signIn')}</a></nav>
+      <nav aria-label={t('landing.navigationLabel')}><a href="#how-hazel-works">{t('landing.howItWorks')}</a><a href={memberPortalUrl}>{t('landing.memberPortal')}</a></nav>
     </header>
     <main id="main">
       <section className="public-hero">

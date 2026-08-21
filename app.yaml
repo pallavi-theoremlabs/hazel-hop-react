@@ -26,16 +26,9 @@ env:
   # Coverbase. COVERBASE_BASE_URL is required even in mock mode — config.py
   # treats a missing value as fatal regardless of mode.
   #
-  # mock, deliberately. No route mounted today touches Coverbase — main.py serves
-  # /api/health and the public router, and the RAFA lookup is a plain HTTP call —
-  # so `live` bought nothing and cost a startup dependency:
-  #
-  #   RuntimeError: COVERBASE_MODE=live requires COVERBASE_API_KEY in the
-  #   environment (app.yaml env:). Add the key and restart.
-  #
-  # which is validate_backend_settings() working as intended, on a key this
-  # deployment has no use for. Switch back to "live" when the Coverbase-backed
-  # routes are ported, and attach the coverbase-api-key secret resource then.
+  # mock keeps a fresh deployment runnable without third-party credentials. For
+  # the integration test, switch this to live, set the real questionnaire id and
+  # attach the coverbase-api-key secret resource before deploying.
   - name: "COVERBASE_MODE"
     value: "mock"
   - name: "COVERBASE_BASE_URL"
@@ -102,11 +95,6 @@ env:
   # documents router is re-mounted.
   - name: "UPLOAD_DIR"
     value: "/tmp/hazel-uploads"
-
-  - name: "HAZEL_DEV_MODE"
-    value: "false"
-  - name: "HAZEL_ENVIRONMENT"
-    value: "production"
 
   # NOT injected by the Lakebase resource — the one connection detail the resource
   # does not supply, so this is the only source rather than a second one. Settled

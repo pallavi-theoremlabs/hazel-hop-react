@@ -1,8 +1,14 @@
 # Render deployment settings
 
-The public web and member portal are separate Vite static sites. Both call the
-existing `hazel-hop-react` BFF; neither browser bundle calls Databricks directly.
-The BFF remains a single manually managed Render web service.
+This repository is currently configured as a throwaway integration application.
+The public web and member portal are separate Vite static sites, both calling the
+same Render BFF. The BFF is the only caller of the Databricks App.
+
+There is no end-user authentication in this deployment. An eligible Submit
+Interest response carries its real `case_id` and `institution_id` directly into
+the member portal. The BFF accepts that integration context only for case load,
+NDA acceptance and Coverbase session creation, then establishes the existing
+Lakebase RLS context.
 
 ## Public web static site
 
@@ -12,11 +18,8 @@ The BFF remains a single manually managed Render web service.
 - Publish Directory: `dist`
 - `VITE_API_BASE_URL=https://hazel-hop-react.onrender.com`
 - `VITE_MEMBER_PORTAL_URL=https://member-portal-c4k9.onrender.com`
-- `VITE_HAZEL_ENVIRONMENT=production`
-- `VITE_DEV_MODE=false`
 
-Add this Redirect/Rewrite rule in the Render dashboard so BrowserRouter routes
-survive direct navigation and refresh:
+Add this Render Redirect/Rewrite rule:
 
 - Source: `/*`
 - Destination: `/index.html`
@@ -29,56 +32,48 @@ survive direct navigation and refresh:
 - Build Command: `npm install && npm run build`
 - Publish Directory: `dist`
 - `VITE_API_BASE_URL=https://hazel-hop-react.onrender.com`
-- `VITE_HAZEL_ENVIRONMENT=production`
-- `VITE_DEV_MODE=false`
 
-Add the same Render rewrite (`/*` to `/index.html`) for `/create-account`,
-`/sign-in`, and `/case/:caseId/*` direct navigation.
+Add the same Render rewrite (`/*` to `/index.html`) so direct real-case URLs and
+refreshes are handled by React Router.
+
+The member root provides a small integration form for reopening a known real
+case. The normal path does not require it:
+
+`Submit Interest -> /case/{case_id}/nda?institution_id={institution_id}`
 
 ## Shared BFF web service
 
-The service stays rooted at `apps/bff`. Keep its current Databricks host, app URL,
-OAuth client credentials, and matching `HAZEL_PROXY_KEY`. Set:
+Keep the existing service rooted at `apps/bff`, with:
 
 - `FRONTEND_ORIGINS=https://frontend-hop.onrender.com,https://member-portal-c4k9.onrender.com`
-- `HAZEL_ENVIRONMENT=production`
-- `HAZEL_DEV_MODE=false`
+- existing `DATABRICKS_HOST`
+- existing `DATABRICKS_APP_URL`
+- existing `DATABRICKS_CLIENT_ID`
+- existing `DATABRICKS_CLIENT_SECRET`
+- existing `HAZEL_PROXY_KEY`
 
-`FRONTEND_ORIGIN` is accepted only as a backward-compatible fallback. Do not set
-either origin setting to `*`. A separate development/test BFF may enable the
-temporary bridge only with both `HAZEL_ENVIRONMENT=development` (or `test`) and
-`HAZEL_DEV_MODE=true`; the production BFF must not.
+`HAZEL_ENVIRONMENT` and `HAZEL_DEV_MODE` are not used by the integration flow.
+Do not create a second BFF.
 
-## Temporary Render onboarding test
+## Databricks App
 
-This is a test-environment configuration, not authentication. It carries the
-real case and institution identifiers from an eligible inquiry through the
-existing three-route server allowlist. It creates no user session or token.
+The App no longer needs `HAZEL_ENVIRONMENT` or `HAZEL_DEV_MODE` for the three
+canonical onboarding routes. Keep the existing Lakebase resource and matching
+`HAZEL_PROXY_KEY`.
 
-Temporarily set the public static site to:
+For a real Coverbase integration call, configure:
 
-- `VITE_API_BASE_URL=https://hazel-hop-react.onrender.com`
-- `VITE_MEMBER_PORTAL_URL=https://member-portal-c4k9.onrender.com`
-- `VITE_HAZEL_ENVIRONMENT=test`
-- `VITE_DEV_MODE=true`
+- `COVERBASE_MODE=live`
+- `COVERBASE_BASE_URL=https://api.coverbase.app`
+- a real `COVERBASE_QUESTIONNAIRE_ID`
+- `COVERBASE_API_KEY` through the attached `coverbase-api-key` secret resource
 
-Temporarily set the member static site to:
+The supported integration slice remains exactly:
 
-- `VITE_API_BASE_URL=https://hazel-hop-react.onrender.com`
-- `VITE_HAZEL_ENVIRONMENT=test`
-- `VITE_DEV_MODE=true`
+- `GET /api/cases/{case_id}`
+- `POST /api/cases/{case_id}/nda/accept`
+- `POST /api/cases/{case_id}/coverbase/session`
 
-Temporarily set the BFF to:
-
-- `FRONTEND_ORIGINS=https://frontend-hop.onrender.com,https://member-portal-c4k9.onrender.com`
-- `HAZEL_ENVIRONMENT=test`
-- `HAZEL_DEV_MODE=true`
-
-The Databricks App must independently set `HAZEL_ENVIRONMENT=test` and
-`HAZEL_DEV_MODE=true`. For a real Coverbase call it must also have
-`COVERBASE_MODE=live`, its existing `COVERBASE_BASE_URL`, a real
-`COVERBASE_QUESTIONNAIRE_ID`, and the `COVERBASE_API_KEY` secret resource.
-
-After testing, rebuild both static sites with `VITE_HAZEL_ENVIRONMENT=production`
-and `VITE_DEV_MODE=false`, and restore both servers to
-`HAZEL_ENVIRONMENT=production` and `HAZEL_DEV_MODE=false` before redeploying.
+All other legacy case routers remain parked. The schema remains the canonical
+`institution`, `"user"`, `rafa`, `onboarding_case`, `document`,
+`case_stage_transition`, and `audit_log` schema.

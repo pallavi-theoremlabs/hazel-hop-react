@@ -1,4 +1,14 @@
 {
+  "integrationHome": {
+    "eyebrow": "Integration app",
+    "title": "Open a Hazel onboarding case",
+    "description": "Start with Submit Interest for the normal flow, or reopen a real case here using its case and institution identifiers.",
+    "caseId": "Case ID",
+    "institutionId": "Institution ID",
+    "openCase": "Open case",
+    "invalidContext": "Enter valid UUID values for both the case and institution.",
+    "note": "This integration app does not authenticate users or create an account, session, credential, or token."
+  },
   "signIn": {
     "title": "Sign in to Hazel",
     "description": "Use the registered work email and password for your existing Hazel account.",

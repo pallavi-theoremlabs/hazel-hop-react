@@ -423,7 +423,7 @@ async def ensure_coverbase_session(case_id: str):
         if case["coverbase_sync_status"] == "IN_PROGRESS":
             raise HTTPException(409, "Coverbase session creation is already in progress.")
         institution = conn.execute(
-            """SELECT legal_name, institution_type, registration_contact_email
+            """SELECT legal_name, institution_type, registration_contact_email, website
                FROM institution WHERE id = %s""",
             (case["institution_id"],),
         ).fetchone()
@@ -433,8 +433,7 @@ async def ensure_coverbase_session(case_id: str):
             "legal_name": institution["legal_name"],
             "institution_type": institution["institution_type"],
             "contact_email": institution["registration_contact_email"],
-            # The canonical schema deliberately has no website column yet.
-            "website": "",
+            "website": institution["website"] or "",
         }
         conn.execute(
             """UPDATE onboarding_case

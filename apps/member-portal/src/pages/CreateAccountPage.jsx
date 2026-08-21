@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import Button from '../components/Button'
-import { isTestEnvironmentEnabled } from '../config/testEnvironment'
 import {
   PASSWORD_REQUIREMENTS,
   canBeginSubmission,
@@ -12,11 +11,6 @@ import {
   validateCreateAccount,
 } from './createAccountState'
 import { testOnboardingDestination } from './testOnboardingContext'
-
-const TEST_ENVIRONMENT_ENABLED = isTestEnvironmentEnabled(
-  import.meta.env.VITE_HAZEL_ENVIRONMENT,
-  import.meta.env.VITE_DEV_MODE,
-)
 
 function PasswordField({
   children,
@@ -81,9 +75,7 @@ export default function CreateAccountPage() {
   const [errors, setErrors] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const errorSummaryRef = useRef(null)
-  const testDestination = TEST_ENVIRONMENT_ENABLED
-    ? testOnboardingDestination(search)
-    : null
+  const testDestination = testOnboardingDestination(search)
 
   const requirementState = useMemo(() => passwordRequirementState(password), [password])
   const errorSignature = errors.map(({ field, messageKey }) => `${field}:${messageKey}`).join('|')
