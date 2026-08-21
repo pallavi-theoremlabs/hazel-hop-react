@@ -128,8 +128,8 @@ async def submit_interest(payload: SubmitInterestCreate):
         conn.execute(
             """INSERT INTO institution
             (id, legal_name, fdic_certificate, institution_type, status,
-             registration_contact_email, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+             registration_contact_email, website, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
             legal_name = excluded.legal_name,
             fdic_certificate = excluded.fdic_certificate,
@@ -138,6 +138,7 @@ async def submit_interest(payload: SubmitInterestCreate):
                 WHEN institution.status IN ('ACTIVE', 'SUSPENDED')
                 THEN institution.status ELSE excluded.status END,
             registration_contact_email = excluded.registration_contact_email,
+            website = excluded.website,
             updated_at = excluded.updated_at""",
             (
                 institution_id,
@@ -146,6 +147,7 @@ async def submit_interest(payload: SubmitInterestCreate):
                 institution_type_for_schema(payload.institution_type),
                 institution_status,
                 payload.contact_email,
+                payload.website,
                 now,
                 now,
             ),
@@ -153,11 +155,13 @@ async def submit_interest(payload: SubmitInterestCreate):
         conn.execute(
             """INSERT INTO "user"
             (id, institution_id, external_identity_id, email, first_name,
-             last_name, role, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, 'MEMBER_ADMIN', %s, %s)
+             last_name, phone, job_title, role, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'MEMBER_ADMIN', %s, %s)
             ON CONFLICT (email) DO UPDATE SET
             first_name = excluded.first_name,
             last_name = excluded.last_name,
+            phone = excluded.phone,
+            job_title = excluded.job_title,
             updated_at = excluded.updated_at""",
             (
                 user_id,
@@ -166,6 +170,8 @@ async def submit_interest(payload: SubmitInterestCreate):
                 payload.contact_email,
                 first_name,
                 last_name,
+                payload.phone,
+                payload.contact_title,
                 now,
                 now,
             ),
@@ -239,12 +245,15 @@ async def submit_interest(payload: SubmitInterestCreate):
     )
     return {
         "case_id": case_id,
-        # The tenant this inquiry now belongs to. Returned so the Azure BFF can
-        # bind the authenticated end user to it — every subsequent /api/cases call
-        # sends it back as X-Hazel-Institution-Id, and it is the only way the case
-        # becomes reachable again, since RLS scopes every read to it.
-        "org_id": institution_id,
         "inquiry_reference": inquiry_reference,
+        # The tenant this inquiry now belongs to. Returned so the BFF can bind the
+        # authenticated end user to it — every subsequent /api/cases call sends it
+        # back as X-Hazel-Institution-Id, and it is the only way the case becomes
+        # reachable again, since RLS scopes every read to it.
+        #
+        # This was returned twice until 2026-08-21, the second time under a key
+        # named for the organizations table of a retired data model. Both carried
+        # the same value, which reads like two identifiers rather than one.
         "institution_id": institution_id,
         "legal_name": bank["legal_name"],
         "fdic_certificate_number": bank["fdic_certificate_number"],
