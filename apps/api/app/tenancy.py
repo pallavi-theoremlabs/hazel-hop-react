@@ -50,7 +50,7 @@ PROXY_KEY_HEADER = "X-Hazel-Proxy-Key"
 # ck_user_role in hazel_schema.sql, verbatim. 'SYSTEM' is deliberately absent: it
 # is the anonymous-intake context the server chooses for itself, never something a
 # caller may ask to be — accepting it here would let the BFF request INSERT rights
-# on institution, app_user and onboarding_case.
+# on institution, "user" and onboarding_case.
 VALID_ROLES = frozenset({
     "MEMBER_ADMIN",
     "MEMBER_CONTRIBUTOR",
@@ -66,6 +66,11 @@ VALID_ROLES = frozenset({
 # environment lookup. Empty means "not configured", which require_proxy() treats as
 # fatal rather than as permission to skip the check.
 PROXY_KEY = os.getenv("HAZEL_PROXY_KEY", "").strip()
+DEPLOYMENT_ENVIRONMENT = os.getenv("HAZEL_ENVIRONMENT", "production").strip().lower()
+DEV_MODE_ENABLED = (
+    DEPLOYMENT_ENVIRONMENT in {"development", "test"}
+    and os.getenv("HAZEL_DEV_MODE", "false").strip().lower() == "true"
+)
 
 # The tenant for the request currently being served.
 #
@@ -157,7 +162,7 @@ async def require_tenant(request: Request) -> None:
 
     The three values map onto the session contract hazel_schema.sql documents. The
     BFF supplies them because it is what authenticated the end user against Entra —
-    app_user.external_identity_id is an Entra object id, so the user row and the
+    hazel."user".external_identity_id is an Entra object id, so the user row and the
     token subject are the same identity by construction.
     """
     await require_proxy(request)
@@ -180,3 +185,16 @@ async def require_tenant(request: Request) -> None:
         raise HTTPException(400, f"{ROLE_HEADER} is not a recognised role.")
 
     set_current_session(institution_id, user_id, role)
+
+
+async def require_dev_tenant(request: Request) -> None:
+    """Establish a tenant only for the temporary development onboarding slice.
+
+    This is intentionally a second gate in addition to the BFF's development
+    gate.  Production keeps HAZEL_DEV_MODE false, so the three temporarily
+    mounted member-onboarding endpoints appear not to exist until real External
+    ID session resolution is implemented.
+    """
+    if not DEV_MODE_ENABLED:
+        raise HTTPException(404, "Not found")
+    await require_tenant(request)

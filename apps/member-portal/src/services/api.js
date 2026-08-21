@@ -4,9 +4,21 @@
 // machine. The unset case is caught at build time by scripts/check-env.mjs; the
 // default below is only for `npm run dev`.
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+const DEV_MODE = import.meta.env.DEV && import.meta.env.VITE_DEV_MODE === 'true'
+const DEV_CONTEXT_KEY = 'hazel.dev.institution_id'
+
+function developmentInstitutionId() {
+  if (!DEV_MODE) return ''
+  const fromHandoff = new URLSearchParams(window.location.search).get('dev_institution_id') || ''
+  if (fromHandoff) sessionStorage.setItem(DEV_CONTEXT_KEY, fromHandoff)
+  return fromHandoff || sessionStorage.getItem(DEV_CONTEXT_KEY) || ''
+}
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, options)
+  const devInstitutionId = developmentInstitutionId()
+  const headers = new Headers(options.headers || {})
+  if (devInstitutionId) headers.set('X-Hazel-Dev-Institution-Id', devInstitutionId)
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
   if (response.status === 204) return null
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {

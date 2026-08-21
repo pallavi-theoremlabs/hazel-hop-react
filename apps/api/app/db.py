@@ -393,7 +393,7 @@ def init_db() -> None:
 
 def require_case(conn, case_id: str):
     row = conn.execute(
-        "SELECT * FROM onboarding_cases WHERE id = %s", (case_id,)
+        "SELECT * FROM onboarding_case WHERE id = %s", (case_id,)
     ).fetchone()
     if not row:
         return None

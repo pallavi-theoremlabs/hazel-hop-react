@@ -7,11 +7,11 @@ from fastapi.responses import JSONResponse
 from app.config import settings, validate_backend_settings
 from app.db import connection, credential_status, init_db
 from app.lakebase import assert_sdk_capabilities, sdk_version
-from app.routers.cases import router as cases_router
+from app.routers.cases import canonical_router, router as cases_router
 from app.routers.dev import router as dev_router
 from app.routers.public import router as public_router
 from app.storage import probe_storage, storage
-from app.tenancy import SYSTEM_SESSION, require_proxy, require_tenant  # noqa: F401
+from app.tenancy import SYSTEM_SESSION, require_dev_tenant, require_proxy
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -43,12 +43,12 @@ app = FastAPI(title="Hazel HOP API", version="0.1.0", lifespan=lifespan)
 # and configuring it anyway would suggest browser-direct access is a supported
 # topology when it is not. See app/tenancy.py.
 
-# Only the public router is mounted.
+# The public router and a three-route development onboarding slice are mounted.
 #
 # postgres setup/hazel_schema.sql is the final schema, and it has no
 # institution_profiles, express_interest_submissions, due_diligence or
-# review_clarifications. Every route in cases_router and dev_router queries at
-# least one of them, so mounting either would publish 46 endpoints that answer 500
+# review_clarifications. The remaining routes in cases_router and dev_router query
+# at least one of them, so mounting either would publish endpoints that answer 500
 # with an UndefinedTable — failures that read like bugs in this service rather than
 # like work that has not been done yet. They are re-mounted as each is ported.
 #
@@ -57,9 +57,12 @@ app = FastAPI(title="Hazel HOP API", version="0.1.0", lifespan=lifespan)
 #     GET /api/banks/{cert}   ->  RAFA over HTTP  ->  JSON
 #     POST /api/submit-interest -> institution, user, case and RAFA rows
 #
-# The remaining case and developer routes stay parked until they are ported to
-# the same schema.
+# canonical_router contains only case load, NDA acceptance and Coverbase session
+# creation. require_dev_tenant makes all three 404 unless HAZEL_ENVIRONMENT is
+# development/test and HAZEL_DEV_MODE is explicitly true. The remaining case and
+# developer routes stay parked until they are ported to the same schema.
 app.include_router(public_router, dependencies=[Depends(require_proxy)])
+app.include_router(canonical_router, dependencies=[Depends(require_dev_tenant)])
 
 _PARKED = (cases_router, dev_router)  # noqa: F841 — named so the imports stay honest
 

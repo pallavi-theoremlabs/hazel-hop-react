@@ -105,6 +105,8 @@ env:
 
   - name: "HAZEL_DEV_MODE"
     value: "false"
+  - name: "HAZEL_ENVIRONMENT"
+    value: "production"
 
   # NOT injected by the Lakebase resource — the one connection detail the resource
   # does not supply, so this is the only source rather than a second one. Settled

@@ -17,7 +17,11 @@ const DEV_MODE = import.meta.env.DEV && import.meta.env.VITE_DEV_MODE === 'true'
 // configure. Left empty it falls back to a same-origin path, which fails visibly
 // in dev instead of silently sending the developer somewhere wrong.
 const MEMBER_PORTAL_URL = (import.meta.env.VITE_MEMBER_PORTAL_URL ?? '').replace(/\/$/, '')
-const openInMemberPortal = (nextPath) => { window.location.assign(`${MEMBER_PORTAL_URL}${nextPath}`) }
+const openInMemberPortal = (nextPath, institutionId) => {
+  const handoff = new URL(`${MEMBER_PORTAL_URL}${nextPath}`, window.location.origin)
+  handoff.searchParams.set('dev_institution_id', institutionId)
+  window.location.assign(handoff.toString())
+}
 
 const EMPTY_VALUES = {
   institution_type: 'Bank',
@@ -221,7 +225,7 @@ export default function SubmitInterestPage() {
         <span className="dev-label">{t('public:submitInterest.devSimulation')}</span>
         <h2>{t('public:submitInterest.devTitle')}</h2>
         <p className="hint">{t('public:submitInterest.devDescription')}</p>
-        <div className="actions"><Button onClick={() => openInMemberPortal(result.next_path)}>{t('public:submitInterest.openNda')}</Button></div>
+        <div className="actions"><Button onClick={() => openInMemberPortal(result.next_path, result.institution_id)}>{t('public:submitInterest.openNda')}</Button></div>
       </section>}
     </main></div>
   }

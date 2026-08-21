@@ -50,7 +50,7 @@ export default function NdaPage() {
         {!completed && <label className="choice nda-acknowledgement"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /><span>{copy('acknowledgement')}</span></label>}
         {error && <div className="alert danger">{error}</div>}
         <div className="actions">
-          {completed ? <><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button><Button onClick={() => navigate(`/case/${caseId}/due-diligence`)}>{copy('next')}</Button></> : <><Button disabled={!accepted || busy} onClick={submit}>{busy ? copy('recording') : copy('accept')}</Button><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button></>}
+          {completed ? <Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button> : <><Button disabled={!accepted || busy} onClick={submit}>{busy ? copy('recording') : copy('accept')}</Button><Button variant="secondary" onClick={() => navigate(`/case/${caseId}/overview`)}>{t('common:actions.returnToOverview')}</Button></>}
         </div>
       </Card>
     </div>

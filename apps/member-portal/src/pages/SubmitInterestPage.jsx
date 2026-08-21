@@ -209,7 +209,7 @@ export default function SubmitInterestPage() {
         <span className="dev-label">{t('public:submitInterest.devSimulation')}</span>
         <h2>{t('public:submitInterest.devTitle')}</h2>
         <p className="hint">{t('public:submitInterest.devDescription')}</p>
-        <div className="actions"><Button onClick={() => navigate(result.next_path)}>{t('public:submitInterest.openNda')}</Button></div>
+        <div className="actions"><Button onClick={() => navigate(`${result.next_path}?dev_institution_id=${encodeURIComponent(result.institution_id)}`)}>{t('public:submitInterest.openNda')}</Button></div>
       </section>}
     </main></div>
   }
